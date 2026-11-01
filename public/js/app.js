@@ -2,7 +2,7 @@
  * app.js - Controller principale dell'interfaccia utente Eisenhower Matrix con Autenticazione Utente
  */
 
-import { TaskStorage } from './storage.js';
+import { TaskStorage } from './storage.js?v=2.2';
 import { setupDragAndDrop, updateAllPlaceholders } from './dnd.js';
 
 class EisenhowerApp {
@@ -48,12 +48,14 @@ class EisenhowerApp {
     this.btnThemeToggle = document.querySelector('#btn-theme-toggle');
 
     // User Profile & Logout Elements
+    this.btnOpenAuth = document.querySelector('#btn-open-auth');
     this.userSection = document.querySelector('#user-section');
     this.userDisplayName = document.querySelector('#user-display-name');
     this.btnLogout = document.querySelector('#btn-logout');
 
     // Auth Modal Elements
     this.authModal = document.querySelector('#auth-modal');
+    this.authModalCloseBtn = document.querySelector('#auth-modal-close-btn');
     this.tabLogin = document.querySelector('#tab-login');
     this.tabRegister = document.querySelector('#tab-register');
     this.formLogin = document.querySelector('#form-login');
@@ -177,11 +179,13 @@ class EisenhowerApp {
 
   updateUserUI(user) {
     if (user) {
+      if (this.btnOpenAuth) this.btnOpenAuth.style.display = 'none';
       if (this.userSection) this.userSection.style.display = 'flex';
       if (this.userDisplayName) {
         this.userDisplayName.textContent = user.display_name || user.username;
       }
     } else {
+      if (this.btnOpenAuth) this.btnOpenAuth.style.display = 'inline-flex';
       if (this.userSection) this.userSection.style.display = 'none';
       if (this.userDisplayName) {
         this.userDisplayName.textContent = '';
@@ -192,6 +196,15 @@ class EisenhowerApp {
   attachEvents() {
     // Theme
     this.btnThemeToggle?.addEventListener('click', () => this.toggleTheme());
+
+    // Open Auth Modal button
+    this.btnOpenAuth?.addEventListener('click', () => this.openAuthModal());
+
+    // Close Auth Modal
+    this.authModalCloseBtn?.addEventListener('click', () => this.closeAuthModal());
+    this.authModal?.addEventListener('click', (e) => {
+      if (e.target === this.authModal) this.closeAuthModal();
+    });
 
     // Auth Tabs
     this.tabLogin?.addEventListener('click', () => this.setAuthTab('login'));

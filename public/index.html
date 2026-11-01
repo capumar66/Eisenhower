@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=2.2">
   
   <!-- SortableJS per Drag & Drop fluido e touch-friendly -->
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -74,7 +74,12 @@
         </button>
         <input type="file" id="file-import-input" accept=".json" style="display: none;">
 
-        <!-- User Profile & Logout -->
+        <!-- Pulsante Accedi / Registrati (visibile quando non autenticato) -->
+        <button id="btn-open-auth" class="btn btn-secondary" title="Accedi o registrati">
+          <span>👤 Accedi / Registrati</span>
+        </button>
+
+        <!-- User Profile & Logout (visibile dopo login) -->
         <div id="user-section" class="user-section" style="display: none;">
           <div class="user-pill" id="user-profile-badge" title="Profilo utente">
             <span class="user-avatar-icon">👤</span>
@@ -244,10 +249,11 @@
   <!-- =========================================================================
        Modal: Autenticazione (Accesso / Registrazione)
        ========================================================================= -->
-  <div id="auth-modal" class="modal-backdrop">
+  <div id="auth-modal" class="modal-backdrop is-open">
     <div class="modal-window auth-modal-window">
       
       <div class="auth-header">
+        <button id="auth-modal-close-btn" class="task-btn auth-close-btn" title="Chiudi">✕</button>
         <div class="auth-brand-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"></rect>
@@ -389,6 +395,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="/js/app.js?v=2.2"></script>
 </body>
 </html>
