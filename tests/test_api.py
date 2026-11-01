@@ -71,6 +71,16 @@ def test_vercel_routing_with_index_py_in_path():
     assert response.status_code == 201
     assert "token" in response.json()
 
+def test_vercel_routing_with_query_param():
+    """Verifica che il normalizzatore gestisca percorsi convertiti in query param da Vercel (?path=auth/register)."""
+    payload = {
+        "username": "utente_query_param",
+        "password": "Password123!"
+    }
+    response = client.post("/api/index.py?path=auth/register", json=payload)
+    assert response.status_code == 201
+    assert "token" in response.json()
+
 def test_register_duplicate_username_fails():
     """Verifica che registrare due volte lo stesso username restituisca 400 Bad Request."""
     payload = {

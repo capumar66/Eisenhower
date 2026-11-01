@@ -216,16 +216,26 @@ app.add_middleware(
 @app.middleware("http")
 async def vercel_path_normalizer(request: Request, call_next):
     """
-    Normalizza il percorso su ambienti Vercel dove i rewrites possono passare
-    la destinazione /api/index.py nel path ASGI scope.
+    Normalizza il percorso su ambienti Vercel serverless.
+    Gestisce percorsi con prefisso file (/api/index.py/...), query parameters (?path=...)
+    e varianti generate dai rewrites Vercel.
     """
     raw_path = request.scope.get("path", "")
-    if raw_path.startswith("/api/index.py"):
-        cleaned = raw_path[len("/api/index.py"):]
-        request.scope["path"] = cleaned if cleaned else "/"
-    elif raw_path.startswith("/api/index"):
-        cleaned = raw_path[len("/api/index"):]
-        request.scope["path"] = cleaned if cleaned else "/"
+
+    # 1. Rimuove prefissi del file serverless se presenti
+    for prefix in ("/api/index.py", "/api/index", "/index.py"):
+        if raw_path.startswith(prefix):
+            raw_path = raw_path[len(prefix):]
+            break
+
+    # 2. Se Vercel ha convertito il percorso in query param (es. ?path=auth/register)
+    if not raw_path or raw_path == "/":
+        param_path = request.query_params.get("path") or request.query_params.get("__route__")
+        if param_path:
+            raw_path = "/" + param_path.lstrip("/")
+
+    if raw_path:
+        request.scope["path"] = raw_path
 
     response = await call_next(request)
     
