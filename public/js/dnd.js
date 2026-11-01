@@ -17,11 +17,13 @@ export function setupDragAndDrop(onTaskMoved) {
         pull: true,
         put: true
       },
+      draggable: '.task-card',
+      emptyInsertThreshold: 50,
       animation: 180,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       dragClass: 'sortable-drag',
-      handle: '.task-card', // L'intera card è afferrabile
+      handle: '.task-card',
       filter: '.task-checkbox, .task-btn, .tag-pill',
       preventOnFilter: false,
       fallbackOnBody: true,
@@ -42,33 +44,30 @@ export function setupDragAndDrop(onTaskMoved) {
         const targetQuadrant = toContainer.dataset.quadrant;
         const newIndex = evt.newIndex;
 
-        // Aggiorna la visibilità dei placeholder su entrambi i container
-        updateContainerPlaceholders(evt.from);
-        updateContainerPlaceholders(toContainer);
+        // Aggiorna la visibilità dei placeholder su tutti i quadranti
+        updateAllPlaceholders();
 
         if (taskId && targetQuadrant !== undefined) {
           onTaskMoved(taskId, targetQuadrant, newIndex);
         }
       }
     });
-
-    // Controllo iniziale placeholder
-    updateContainerPlaceholders(container);
   });
+
+  // Controllo iniziale placeholder
+  updateAllPlaceholders();
 }
 
 /**
- * Mostra o nasconde l'empty placeholder in base alla presenza di card
+ * Mostra o nasconde l'empty placeholder per ciascuna lista
  */
-export function updateContainerPlaceholders(container) {
-  if (!container) return;
-  const cards = container.querySelectorAll('.task-card');
-  const placeholder = container.querySelector('.empty-placeholder');
-  if (placeholder) {
-    if (cards.length === 0) {
-      placeholder.style.display = 'flex';
-    } else {
-      placeholder.style.display = 'none';
+export function updateAllPlaceholders() {
+  document.querySelectorAll('.task-list').forEach(container => {
+    const listId = container.id;
+    const cards = container.querySelectorAll('.task-card');
+    const placeholder = document.querySelector(`[data-placeholder-for="${listId}"]`);
+    if (placeholder) {
+      placeholder.style.display = cards.length === 0 ? 'flex' : 'none';
     }
-  }
+  });
 }

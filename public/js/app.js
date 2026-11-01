@@ -3,7 +3,7 @@
  */
 
 import { TaskStorage } from './storage.js';
-import { setupDragAndDrop, updateContainerPlaceholders } from './dnd.js';
+import { setupDragAndDrop, updateAllPlaceholders } from './dnd.js';
 
 class EisenhowerApp {
   constructor() {
@@ -192,6 +192,7 @@ class EisenhowerApp {
     sameQuadrantTasks.forEach((t, idx) => t.order = idx);
 
     await TaskStorage.moveTask(taskId, targetQuadrant, newOrder);
+    updateAllPlaceholders();
     this.updateStats();
 
     const quadrantNames = {
@@ -219,10 +220,10 @@ class EisenhowerApp {
       q4: this.containerQ4
     };
 
-    // Pulisci solo le card esistenti, conservando il placeholder
+    // Pulisci i container
     Object.values(listMap).forEach(container => {
       if (!container) return;
-      container.querySelectorAll('.task-card').forEach(c => c.remove());
+      container.innerHTML = '';
     });
 
     const filtered = this.tasks.filter(t => {
@@ -243,7 +244,7 @@ class EisenhowerApp {
     });
 
     // Aggiorna visibilità empty placeholder su tutti i contenitori
-    Object.values(listMap).forEach(c => updateContainerPlaceholders(c));
+    updateAllPlaceholders();
 
     this.updateStats();
   }
