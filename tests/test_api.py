@@ -36,7 +36,7 @@ def test_no_demo_user_exists_by_default():
         assert count == 0
 
 def test_register_new_user_success():
-    """Verifica la registrazione corretta di un nuovo utente."""
+    """Verifica la registrazione corretta di un nuovo utente sia su /api/auth/register che su /auth/register (Vercel)."""
     payload = {
         "username": "marco_capuano",
         "password": "Password123!",
@@ -49,6 +49,27 @@ def test_register_new_user_success():
     assert data["user"]["username"] == "marco_capuano"
     assert data["user"]["display_name"] == "Marco Capuano"
     assert "id" in data["user"]
+
+def test_vercel_routing_without_api_prefix():
+    """Verifica che gli endpoint rispondano anche se Vercel rimuove il prefisso /api (es: /auth/register)."""
+    payload = {
+        "username": "utente_vercel",
+        "password": "Password123!",
+        "display_name": "Utente Vercel"
+    }
+    response = client.post("/auth/register", json=payload)
+    assert response.status_code == 201
+    assert "token" in response.json()
+
+def test_vercel_routing_with_index_py_in_path():
+    """Verifica che il normalizzatore gestisca percorsi contenenti /api/index.py."""
+    payload = {
+        "username": "utente_index_py",
+        "password": "Password123!"
+    }
+    response = client.post("/api/index.py/auth/register", json=payload)
+    assert response.status_code == 201
+    assert "token" in response.json()
 
 def test_register_duplicate_username_fails():
     """Verifica che registrare due volte lo stesso username restituisca 400 Bad Request."""

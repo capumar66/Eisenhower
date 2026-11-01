@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Generator, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -180,13 +180,14 @@ class TaskMoveRequest(BaseModel):
     new_order: int = Field(default=0, ge=0)
 
 # ---------------------------------------------------------------------------
-# Inizializzazione Applicazione FastAPI
+# Inizializzazione Applicazione FastAPI e Router
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="Eisenhower Matrix API",
     description="Backend API in Python per la gestione della Matrice di Eisenhower con autenticazione utente",
-    version="2.0.0"
+    version="2.0.0",
+    redirect_slashes=False
 )
 
 # Configurazione CORS
@@ -199,14 +200,32 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def add_cache_control_headers(request, call_next):
+async def vercel_path_normalizer(request: Request, call_next):
+    """
+    Normalizza il percorso su ambienti Vercel dove i rewrites possono passare
+    la destinazione /api/index.py nel path ASGI scope.
+    """
+    raw_path = request.scope.get("path", "")
+    if raw_path.startswith("/api/index.py"):
+        cleaned = raw_path[len("/api/index.py"):]
+        request.scope["path"] = cleaned if cleaned else "/"
+    elif raw_path.startswith("/api/index"):
+        cleaned = raw_path[len("/api/index"):]
+        request.scope["path"] = cleaned if cleaned else "/"
+
     response = await call_next(request)
+    
+    # Headers no-cache per prevenire problemi di caching dei browser
     path = request.url.path
-    if path.startswith("/api/"):
+    if path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/tasks/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     elif path.endswith((".html", ".js", ".css")) or path == "/":
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
+
     return response
+
+# Router unificato per gestire endpoint sia con prefisso '/api' che senza
+api_router = APIRouter()
 
 # ---------------------------------------------------------------------------
 # Dipendenza Autenticazione (Bearer Token)
@@ -271,7 +290,7 @@ def row_to_task(row: sqlite3.Row) -> Task:
 # Endpoint di Autenticazione
 # ---------------------------------------------------------------------------
 
-@app.post("/api/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+@api_router.post("/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister):
     """Registra un nuovo utente e restituisce il token di sessione."""
     clean_username = payload.username.strip()
@@ -288,7 +307,6 @@ def register(payload: UserRegister):
 
     with get_db() as conn:
         cursor = conn.cursor()
-        # Verifica se lo username esiste già
         cursor.execute("SELECT id FROM users WHERE username = ?", (clean_username,))
         if cursor.fetchone():
             raise HTTPException(
@@ -304,7 +322,6 @@ def register(payload: UserRegister):
             (user_id, clean_username, pwd_hash, salt, display_name, now_iso)
         )
 
-        # Crea sessione
         token = secrets.token_urlsafe(32)
         cursor.execute(
             "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
@@ -319,7 +336,7 @@ def register(payload: UserRegister):
     )
     return AuthResponse(token=token, user=user_res)
 
-@app.post("/api/auth/login", response_model=AuthResponse)
+@api_router.post("/auth/login", response_model=AuthResponse)
 def login(payload: UserLogin):
     """Autentica un utente esistente e genera un nuovo token di sessione."""
     clean_username = payload.username.strip()
@@ -352,12 +369,12 @@ def login(payload: UserLogin):
     )
     return AuthResponse(token=token, user=user_res)
 
-@app.get("/api/auth/me", response_model=UserResponse)
+@api_router.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):
     """Restituisce il profilo dell'utente correntemente autenticato."""
     return current_user
 
-@app.post("/api/auth/logout")
+@api_router.post("/auth/logout")
 def logout(authorization: Optional[str] = Header(None)):
     """Invalida la sessione corrente dell'utente."""
     if authorization and authorization.startswith("Bearer "):
@@ -370,12 +387,12 @@ def logout(authorization: Optional[str] = Header(None)):
 # API Endpoints Tasks (Isolati per Utente)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/health")
+@api_router.get("/health")
 def health_check():
     """Verifica lo stato dell'API."""
     return {"status": "healthy", "service": "eisenhower-matrix-api"}
 
-@app.get("/api/tasks", response_model=List[Task])
+@api_router.get("/tasks", response_model=List[Task])
 def get_tasks(current_user: UserResponse = Depends(get_current_user)):
     """Recupera la lista delle attività dell'utente loggato, ordinate per quadrante e ordine."""
     with get_db() as conn:
@@ -391,7 +408,7 @@ def get_tasks(current_user: UserResponse = Depends(get_current_user)):
         rows = cursor.fetchall()
         return [row_to_task(r) for r in rows]
 
-@app.post("/api/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
+@api_router.post("/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreate, current_user: UserResponse = Depends(get_current_user)):
     """Crea una nuova attività per l'utente loggato."""
     task_id = str(uuid.uuid4())
@@ -439,7 +456,7 @@ def create_task(payload: TaskCreate, current_user: UserResponse = Depends(get_cu
         created_at=created_at,
     )
 
-@app.get("/api/tasks/{task_id}", response_model=Task)
+@api_router.get("/tasks/{task_id}", response_model=Task)
 def get_task(task_id: str, current_user: UserResponse = Depends(get_current_user)):
     """Recupera una specifica attività dell'utente per ID."""
     with get_db() as conn:
@@ -450,7 +467,7 @@ def get_task(task_id: str, current_user: UserResponse = Depends(get_current_user
             raise HTTPException(status_code=404, detail="Task non trovata")
         return row_to_task(row)
 
-@app.put("/api/tasks/{task_id}", response_model=Task)
+@api_router.put("/tasks/{task_id}", response_model=Task)
 def update_task(task_id: str, payload: TaskUpdate, current_user: UserResponse = Depends(get_current_user)):
     """Aggiorna un'attività esistente dell'utente."""
     with get_db() as conn:
@@ -500,7 +517,7 @@ def update_task(task_id: str, payload: TaskUpdate, current_user: UserResponse = 
         updated_row = cursor.fetchone()
         return row_to_task(updated_row)
 
-@app.delete("/api/tasks/{task_id}")
+@api_router.delete("/tasks/{task_id}")
 def delete_task(task_id: str, current_user: UserResponse = Depends(get_current_user)):
     """Elimina un'attività dell'utente per ID."""
     with get_db() as conn:
@@ -511,7 +528,7 @@ def delete_task(task_id: str, current_user: UserResponse = Depends(get_current_u
         cursor.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
     return {"success": True, "deleted_id": task_id}
 
-@app.post("/api/tasks/move", response_model=Task)
+@api_router.post("/tasks/move", response_model=Task)
 def move_task(payload: TaskMoveRequest, current_user: UserResponse = Depends(get_current_user)):
     """Sposta un'attività tra quadranti e aggiorna la posizione d'ordine."""
     with get_db() as conn:
@@ -534,12 +551,11 @@ def move_task(payload: TaskMoveRequest, current_user: UserResponse = Depends(get
         updated_row = cursor.fetchone()
         return row_to_task(updated_row)
 
-@app.post("/api/tasks/bulk-sync", response_model=List[Task])
+@api_router.post("/tasks/bulk-sync", response_model=List[Task])
 def bulk_sync(tasks: List[Task], current_user: UserResponse = Depends(get_current_user)):
     """Sincronizza in blocco le attività dell'utente loggato."""
     with get_db() as conn:
         cursor = conn.cursor()
-        # Rimuove i task attuali dell'utente
         cursor.execute("DELETE FROM tasks WHERE user_id = ?", (current_user.id,))
         for t in tasks:
             cursor.execute(
@@ -567,6 +583,12 @@ def bulk_sync(tasks: List[Task], current_user: UserResponse = Depends(get_curren
             (current_user.id,)
         )
         return [row_to_task(r) for r in cursor.fetchall()]
+
+# ---------------------------------------------------------------------------
+# Registrazione Router (supporta sia percorsi con prefisso '/api' che senza)
+# ---------------------------------------------------------------------------
+app.include_router(api_router, prefix="/api")
+app.include_router(api_router)
 
 # ---------------------------------------------------------------------------
 # Montaggio StaticFiles per ambiente locale / standalone
