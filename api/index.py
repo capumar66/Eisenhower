@@ -1,13 +1,113 @@
+import hashlib
+import json
+import os
+import re
+import secrets
+import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Generator, List, Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+# ---------------------------------------------------------------------------
+# Configurazione Database SQLite (con supporto Vercel /tmp)
+# ---------------------------------------------------------------------------
+
+def get_db_path() -> Path:
+    if os.environ.get("DATABASE_TEST_PATH"):
+        return Path(os.environ["DATABASE_TEST_PATH"])
+    if os.environ.get("VERCEL"):
+        return Path("/tmp/eisenhower.db")
+    return Path(__file__).resolve().parent.parent / "eisenhower.db"
+
+@contextmanager
+def get_db() -> Generator[sqlite3.Connection, None, None]:
+    db_path = get_db_path()
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+def init_db():
+    """Inizializza le tabelle del database se non esistono."""
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                display_name TEXT,
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                quadrant TEXT NOT NULL,
+                completed INTEGER NOT NULL DEFAULT 0,
+                priority TEXT NOT NULL,
+                due_date TEXT,
+                tags TEXT NOT NULL DEFAULT '[]',
+                order_idx INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, quadrant, order_idx);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);")
+
+# Esegui inizializzazione all'avvio
+init_db()
+
+# ---------------------------------------------------------------------------
+# Utility di Sicurezza e Hashing Password
+# ---------------------------------------------------------------------------
+
+def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
+    if not salt:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        100_000
+    )
+    return hashed.hex(), salt
+
+def verify_password(password: str, salt: str, expected_hash: str) -> bool:
+    hashed = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        100_000
+    )
+    return secrets.compare_digest(hashed.hex(), expected_hash)
 
 # ---------------------------------------------------------------------------
 # Modelli e Schemi Dati (Pydantic v2)
@@ -24,6 +124,25 @@ class PriorityType(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=30)
+    password: str = Field(..., min_length=6, max_length=100)
+    display_name: Optional[str] = Field(default="", max_length=50)
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    display_name: Optional[str] = None
+    created_at: str
+
+class AuthResponse(BaseModel):
+    token: str
+    user: UserResponse
 
 class Task(BaseModel):
     id: str
@@ -66,11 +185,11 @@ class TaskMoveRequest(BaseModel):
 
 app = FastAPI(
     title="Eisenhower Matrix API",
-    description="Backend API moderna in Python per la gestione della Matrice di Eisenhower",
-    version="1.0.0"
+    description="Backend API in Python per la gestione della Matrice di Eisenhower con autenticazione utente",
+    version="2.0.0"
 )
 
-# Configurazione CORS per compatibilità con frontend e preview Vercel
+# Configurazione CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -80,79 +199,165 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Store in-memory con Task Dimostrative Iniziali
+# Dipendenza Autenticazione (Bearer Token)
 # ---------------------------------------------------------------------------
 
-now_iso = datetime.now(timezone.utc).isoformat()
-
-INITIAL_TASKS: Dict[str, Task] = {
-    "task-demo-1": Task(
-        id="task-demo-1",
-        title="Risolvere bug bloccante in produzione",
-        description="Errore 500 riscontrato dagli utenti durante il checkout",
-        quadrant=QuadrantType.Q1,
-        completed=False,
-        priority=PriorityType.HIGH,
-        due_date="2026-11-02",
-        tags=["Urgent", "Backend"],
-        order=0,
-        created_at=now_iso,
-    ),
-    "task-demo-2": Task(
-        id="task-demo-2",
-        title="Pianificare architettura Q1",
-        description="Definire roadmap tecnologica e strategia per il prossimo trimestre",
-        quadrant=QuadrantType.Q2,
-        completed=False,
-        priority=PriorityType.HIGH,
-        due_date="2026-11-15",
-        tags=["Strategia", "Planning"],
-        order=0,
-        created_at=now_iso,
-    ),
-    "task-demo-3": Task(
-        id="task-demo-3",
-        title="Rispondere alle email di routine",
-        description="Smistare richieste informative generiche e aggiornamenti",
-        quadrant=QuadrantType.Q3,
-        completed=False,
-        priority=PriorityType.MEDIUM,
-        due_date="2026-11-03",
-        tags=["Comunicazione"],
-        order=0,
-        created_at=now_iso,
-    ),
-    "task-demo-4": Task(
-        id="task-demo-4",
-        title="Organizzare vecchi file di download",
-        description="Pulizia cartella download locale, attività non urgente né prioritaria",
-        quadrant=QuadrantType.Q4,
-        completed=False,
-        priority=PriorityType.LOW,
-        due_date=None,
-        tags=["Pulizia"],
-        order=0,
-        created_at=now_iso,
-    ),
-    "task-demo-5": Task(
-        id="task-demo-5",
-        title="Revisione bozza presentazione clienti",
-        description="Attività inserita nell'inbox, da posizionare nel quadrante idoneo",
-        quadrant=QuadrantType.INBOX,
-        completed=False,
-        priority=PriorityType.MEDIUM,
-        due_date="2026-11-05",
-        tags=["Marketing", "Review"],
-        order=0,
-        created_at=now_iso,
-    ),
-}
-
-# Database in memoria di runtime
-tasks_db: Dict[str, Task] = dict(INITIAL_TASKS)
+def get_current_user(authorization: Optional[str] = Header(None)) -> UserResponse:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autenticazione richiesta. Effettua il login."
+        )
+    token = authorization.split("Bearer ", 1)[1].strip()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT u.id, u.username, u.display_name, u.created_at
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ?
+            """,
+            (token,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sessione non valida o scaduta. Effettua nuovamente il login."
+            )
+        return UserResponse(
+            id=row["id"],
+            username=row["username"],
+            display_name=row["display_name"],
+            created_at=row["created_at"]
+        )
 
 # ---------------------------------------------------------------------------
-# API Endpoints
+# Helper Task Row -> Task Pydantic
+# ---------------------------------------------------------------------------
+
+def row_to_task(row: sqlite3.Row) -> Task:
+    tags = []
+    if row["tags"]:
+        try:
+            tags = json.loads(row["tags"])
+        except Exception:
+            tags = []
+    return Task(
+        id=row["id"],
+        title=row["title"],
+        description=row["description"] or "",
+        quadrant=QuadrantType(row["quadrant"]),
+        completed=bool(row["completed"]),
+        priority=PriorityType(row["priority"]),
+        due_date=row["due_date"],
+        tags=tags,
+        order=row["order_idx"],
+        created_at=row["created_at"]
+    )
+
+# ---------------------------------------------------------------------------
+# Endpoint di Autenticazione
+# ---------------------------------------------------------------------------
+
+@app.post("/api/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: UserRegister):
+    """Registra un nuovo utente e restituisce il token di sessione."""
+    clean_username = payload.username.strip()
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", clean_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lo username può contenere solo lettere, numeri, punti, trattini o underscore."
+        )
+
+    user_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    pwd_hash, salt = hash_password(payload.password)
+    display_name = payload.display_name.strip() if payload.display_name else clean_username
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Verifica se lo username esiste già
+        cursor.execute("SELECT id FROM users WHERE username = ?", (clean_username,))
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nome utente già utilizzato. Scegline un altro."
+            )
+
+        cursor.execute(
+            """
+            INSERT INTO users (id, username, password_hash, salt, display_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, clean_username, pwd_hash, salt, display_name, now_iso)
+        )
+
+        # Crea sessione
+        token = secrets.token_urlsafe(32)
+        cursor.execute(
+            "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+            (token, user_id, now_iso)
+        )
+
+    user_res = UserResponse(
+        id=user_id,
+        username=clean_username,
+        display_name=display_name,
+        created_at=now_iso
+    )
+    return AuthResponse(token=token, user=user_res)
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+def login(payload: UserLogin):
+    """Autentica un utente esistente e genera un nuovo token di sessione."""
+    clean_username = payload.username.strip()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, username, password_hash, salt, display_name, created_at FROM users WHERE username = ?",
+            (clean_username,)
+        )
+        row = cursor.fetchone()
+        if not row or not verify_password(payload.password, row["salt"], row["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Nome utente o password non corretti."
+            )
+
+        user_id = row["id"]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        token = secrets.token_urlsafe(32)
+        cursor.execute(
+            "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+            (token, user_id, now_iso)
+        )
+
+    user_res = UserResponse(
+        id=user_id,
+        username=row["username"],
+        display_name=row["display_name"],
+        created_at=row["created_at"]
+    )
+    return AuthResponse(token=token, user=user_res)
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def get_me(current_user: UserResponse = Depends(get_current_user)):
+    """Restituisce il profilo dell'utente correntemente autenticato."""
+    return current_user
+
+@app.post("/api/auth/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    """Invalida la sessione corrente dell'utente."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1].strip()
+        with get_db() as conn:
+            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    return {"success": True, "message": "Disconnessione effettuata con successo."}
+
+# ---------------------------------------------------------------------------
+# API Endpoints Tasks (Isolati per Utente)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/health")
@@ -161,21 +366,57 @@ def health_check():
     return {"status": "healthy", "service": "eisenhower-matrix-api"}
 
 @app.get("/api/tasks", response_model=List[Task])
-def get_tasks():
-    """Recupera la lista di tutte le attività, ordinate per quadrante e ordine."""
-    return sorted(list(tasks_db.values()), key=lambda t: (t.quadrant.value, t.order))
+def get_tasks(current_user: UserResponse = Depends(get_current_user)):
+    """Recupera la lista delle attività dell'utente loggato, ordinate per quadrante e ordine."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM tasks
+            WHERE user_id = ?
+            ORDER BY quadrant ASC, order_idx ASC, created_at DESC
+            """,
+            (current_user.id,)
+        )
+        rows = cursor.fetchall()
+        return [row_to_task(r) for r in rows]
 
 @app.post("/api/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate):
-    """Crea una nuova attività."""
+def create_task(payload: TaskCreate, current_user: UserResponse = Depends(get_current_user)):
+    """Crea una nuova attività per l'utente loggato."""
     task_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
-    
-    # Calcola il prossimo indice order nel quadrante di destinazione
-    existing_in_quadrant = [t for t in tasks_db.values() if t.quadrant == payload.quadrant]
-    next_order = len(existing_in_quadrant)
 
-    new_task = Task(
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM tasks WHERE user_id = ? AND quadrant = ?",
+            (current_user.id, payload.quadrant.value)
+        )
+        next_order = cursor.fetchone()[0]
+
+        tags_json = json.dumps(payload.tags or [])
+        cursor.execute(
+            """
+            INSERT INTO tasks (id, user_id, title, description, quadrant, completed, priority, due_date, tags, order_idx, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                current_user.id,
+                payload.title,
+                payload.description or "",
+                payload.quadrant.value,
+                0,
+                payload.priority.value,
+                payload.due_date,
+                tags_json,
+                next_order,
+                created_at,
+            )
+        )
+
+    return Task(
         id=task_id,
         title=payload.title,
         description=payload.description or "",
@@ -187,67 +428,135 @@ def create_task(payload: TaskCreate):
         order=next_order,
         created_at=created_at,
     )
-    tasks_db[task_id] = new_task
-    return new_task
 
 @app.get("/api/tasks/{task_id}", response_model=Task)
-def get_task(task_id: str):
-    """Recupera una specifica attività per ID."""
-    if task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Task non trovata")
-    return tasks_db[task_id]
+def get_task(task_id: str, current_user: UserResponse = Depends(get_current_user)):
+    """Recupera una specifica attività dell'utente per ID."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task non trovata")
+        return row_to_task(row)
 
 @app.put("/api/tasks/{task_id}", response_model=Task)
-def update_task(task_id: str, payload: TaskUpdate):
-    """Aggiorna un'attività esistente."""
-    if task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Task non trovata")
-    
-    current_task = tasks_db[task_id]
-    update_data = payload.model_dump(exclude_unset=True)
-    
-    updated_task = current_task.model_copy(update=update_data)
-    tasks_db[task_id] = updated_task
-    return updated_task
+def update_task(task_id: str, payload: TaskUpdate, current_user: UserResponse = Depends(get_current_user)):
+    """Aggiorna un'attività esistente dell'utente."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task non trovata")
+
+        current_task = row_to_task(row)
+        update_data = payload.model_dump(exclude_unset=True)
+
+        new_title = update_data.get("title", current_task.title)
+        new_desc = update_data.get("description", current_task.description)
+        new_quadrant = update_data.get("quadrant", current_task.quadrant)
+        if isinstance(new_quadrant, QuadrantType):
+            new_quadrant = new_quadrant.value
+        new_completed = int(update_data.get("completed", current_task.completed))
+        new_priority = update_data.get("priority", current_task.priority)
+        if isinstance(new_priority, PriorityType):
+            new_priority = new_priority.value
+        new_due_date = update_data.get("due_date", current_task.due_date)
+        new_tags = update_data.get("tags", current_task.tags)
+        new_order = update_data.get("order", current_task.order)
+
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET title = ?, description = ?, quadrant = ?, completed = ?, priority = ?, due_date = ?, tags = ?, order_idx = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                new_title,
+                new_desc,
+                new_quadrant,
+                new_completed,
+                new_priority,
+                new_due_date,
+                json.dumps(new_tags),
+                new_order,
+                task_id,
+                current_user.id
+            )
+        )
+
+        cursor.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
+        updated_row = cursor.fetchone()
+        return row_to_task(updated_row)
 
 @app.delete("/api/tasks/{task_id}")
-def delete_task(task_id: str):
-    """Elimina un'attività per ID."""
-    if task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Task non trovata")
-    del tasks_db[task_id]
+def delete_task(task_id: str, current_user: UserResponse = Depends(get_current_user)):
+    """Elimina un'attività dell'utente per ID."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Task non trovata")
+        cursor.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", (task_id, current_user.id))
     return {"success": True, "deleted_id": task_id}
 
 @app.post("/api/tasks/move", response_model=Task)
-def move_task(payload: TaskMoveRequest):
+def move_task(payload: TaskMoveRequest, current_user: UserResponse = Depends(get_current_user)):
     """Sposta un'attività tra quadranti e aggiorna la posizione d'ordine."""
-    if payload.task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Task non trovata")
-    
-    task = tasks_db[payload.task_id]
-    old_quadrant = task.quadrant
-    target_quadrant = payload.target_quadrant
-    
-    # Aggiorna il task
-    task.quadrant = target_quadrant
-    task.order = payload.new_order
-    tasks_db[payload.task_id] = task
-    
-    return task
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", (payload.task_id, current_user.id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task non trovata")
+
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET quadrant = ?, order_idx = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (payload.target_quadrant.value, payload.new_order, payload.task_id, current_user.id)
+        )
+
+        cursor.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", (payload.task_id, current_user.id))
+        updated_row = cursor.fetchone()
+        return row_to_task(updated_row)
 
 @app.post("/api/tasks/bulk-sync", response_model=List[Task])
-def bulk_sync(tasks: List[Task]):
-    """Sincronizza in blocco la lista dei task (per ripristino o backup da client)."""
-    global tasks_db
-    tasks_db = {t.id: t for t in tasks}
-    return list(tasks_db.values())
+def bulk_sync(tasks: List[Task], current_user: UserResponse = Depends(get_current_user)):
+    """Sincronizza in blocco le attività dell'utente loggato."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Rimuove i task attuali dell'utente
+        cursor.execute("DELETE FROM tasks WHERE user_id = ?", (current_user.id,))
+        for t in tasks:
+            cursor.execute(
+                """
+                INSERT INTO tasks (id, user_id, title, description, quadrant, completed, priority, due_date, tags, order_idx, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    t.id,
+                    current_user.id,
+                    t.title,
+                    t.description or "",
+                    t.quadrant.value,
+                    int(t.completed),
+                    t.priority.value,
+                    t.due_date,
+                    json.dumps(t.tags or []),
+                    t.order,
+                    t.created_at
+                )
+            )
 
-@app.post("/api/tasks/reset-demo", response_model=List[Task])
-def reset_demo():
-    """Ripristina i dati demo predefiniti."""
-    global tasks_db
-    tasks_db = dict(INITIAL_TASKS)
-    return list(tasks_db.values())
+        cursor.execute(
+            "SELECT * FROM tasks WHERE user_id = ? ORDER BY quadrant ASC, order_idx ASC",
+            (current_user.id,)
+        )
+        return [row_to_task(r) for r in cursor.fetchall()]
 
 # ---------------------------------------------------------------------------
 # Montaggio StaticFiles per ambiente locale / standalone

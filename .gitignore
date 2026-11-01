@@ -18,3 +18,7 @@ htmlcov/
 .env
 .DS_Store
 *.log
+*.db
+*.sqlite3
+*.db-wal
+*.db-shm

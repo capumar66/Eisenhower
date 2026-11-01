@@ -74,9 +74,16 @@
         </button>
         <input type="file" id="file-import-input" accept=".json" style="display: none;">
 
-        <button id="btn-reset-demo" class="btn btn-secondary" title="Ripristina attività dimostrative">
-          <span>🔄 Demo</span>
-        </button>
+        <!-- User Profile & Logout -->
+        <div id="user-section" class="user-section" style="display: none;">
+          <div class="user-pill" id="user-profile-badge" title="Profilo utente">
+            <span class="user-avatar-icon">👤</span>
+            <span id="user-display-name" class="user-name">Utente</span>
+          </div>
+          <button id="btn-logout" class="btn btn-secondary btn-sm" title="Disconnettiti">
+            <span>Esci 🚪</span>
+          </button>
+        </div>
 
         <!-- Toggle Dark/Light Theme -->
         <button id="btn-theme-toggle" class="btn-icon" title="Cambia tema chiaro/scuro">
@@ -233,6 +240,81 @@
     </section>
 
   </main>
+
+  <!-- =========================================================================
+       Modal: Autenticazione (Accesso / Registrazione)
+       ========================================================================= -->
+  <div id="auth-modal" class="modal-backdrop">
+    <div class="modal-window auth-modal-window">
+      
+      <div class="auth-header">
+        <div class="auth-brand-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+        </div>
+        <h2 class="auth-title">Eisenhower Matrix</h2>
+        <p class="auth-subtitle">Accedi o crea il tuo account personale per gestire le tue priorità</p>
+      </div>
+
+      <!-- Auth Tabs: Login vs Register -->
+      <div class="auth-tabs">
+        <button type="button" id="tab-login" class="auth-tab is-active">Accedi</button>
+        <button type="button" id="tab-register" class="auth-tab">Crea Account</button>
+      </div>
+
+      <!-- Error Alert Box -->
+      <div id="auth-error-box" class="auth-error-box" style="display: none;"></div>
+
+      <!-- Form Login -->
+      <form id="form-login" class="auth-form">
+        <div class="form-group">
+          <label class="form-label" for="login-username">Nome Utente</label>
+          <input type="text" id="login-username" class="form-input" placeholder="Inserisci il tuo username" required autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Inserisci la password" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" id="btn-submit-login" class="btn btn-primary auth-submit-btn">
+          <span>Accedi</span>
+        </button>
+      </form>
+
+      <!-- Form Registrazione -->
+      <form id="form-register" class="auth-form" style="display: none;">
+        <div class="form-group">
+          <label class="form-label" for="register-username">Nome Utente *</label>
+          <input type="text" id="register-username" class="form-input" placeholder="Es. marco_c (min. 3 caratteri)" required minlength="3" maxlength="30" autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="register-name">Nome Visibile (Opzionale)</label>
+          <input type="text" id="register-name" class="form-input" placeholder="Es. Marco Capuano" maxlength="50" autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="register-password">Password *</label>
+          <input type="password" id="register-password" class="form-input" placeholder="Almeno 6 caratteri" required minlength="6" maxlength="100" autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="register-password-confirm">Conferma Password *</label>
+          <input type="password" id="register-password-confirm" class="form-input" placeholder="Ripeti la password" required minlength="6" maxlength="100" autocomplete="new-password">
+        </div>
+
+        <button type="submit" id="btn-submit-register" class="btn btn-primary auth-submit-btn">
+          <span>Crea Account e Inizia</span>
+        </button>
+      </form>
+
+    </div>
+  </div>
 
   <!-- =========================================================================
        Modal: Creazione / Modifica Attività

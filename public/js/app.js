@@ -1,5 +1,5 @@
 /**
- * app.js - Controller principale dell'interfaccia utente Eisenhower Matrix
+ * app.js - Controller principale dell'interfaccia utente Eisenhower Matrix con Autenticazione Utente
  */
 
 import { TaskStorage } from './storage.js';
@@ -10,6 +10,7 @@ class EisenhowerApp {
     this.tasks = [];
     this.filterText = '';
     this.editingTaskId = null;
+    this.currentUser = null;
 
     this.initElements();
     this.initTheme();
@@ -39,19 +40,39 @@ class EisenhowerApp {
     // Search
     this.searchInput = document.querySelector('#search-input');
 
-    // Buttons
+    // Header Actions & Buttons
     this.btnNewTask = document.querySelector('#btn-new-task');
     this.btnExport = document.querySelector('#btn-export');
     this.btnImport = document.querySelector('#btn-import');
     this.fileInput = document.querySelector('#file-import-input');
-    this.btnResetDemo = document.querySelector('#btn-reset-demo');
     this.btnThemeToggle = document.querySelector('#btn-theme-toggle');
+
+    // User Profile & Logout Elements
+    this.userSection = document.querySelector('#user-section');
+    this.userDisplayName = document.querySelector('#user-display-name');
+    this.btnLogout = document.querySelector('#btn-logout');
+
+    // Auth Modal Elements
+    this.authModal = document.querySelector('#auth-modal');
+    this.tabLogin = document.querySelector('#tab-login');
+    this.tabRegister = document.querySelector('#tab-register');
+    this.formLogin = document.querySelector('#form-login');
+    this.formRegister = document.querySelector('#form-register');
+    this.authErrorBox = document.querySelector('#auth-error-box');
+
+    this.loginUsername = document.querySelector('#login-username');
+    this.loginPassword = document.querySelector('#login-password');
+
+    this.registerUsername = document.querySelector('#register-username');
+    this.registerName = document.querySelector('#register-name');
+    this.registerPassword = document.querySelector('#register-password');
+    this.registerPasswordConfirm = document.querySelector('#register-password-confirm');
 
     // Quick Add Form
     this.quickAddForm = document.querySelector('#quick-add-form');
     this.quickInput = document.querySelector('#quick-input');
 
-    // Modal
+    // Task Modal
     this.modalBackdrop = document.querySelector('#task-modal');
     this.modalTitle = document.querySelector('#modal-title');
     this.taskForm = document.querySelector('#task-form');
@@ -89,14 +110,171 @@ class EisenhowerApp {
   }
 
   async boot() {
-    this.tasks = await TaskStorage.initTasks();
-    this.render();
     setupDragAndDrop(this.handleTaskMoved.bind(this));
+
+    const user = await TaskStorage.checkAuthStatus();
+    if (!user) {
+      this.currentUser = null;
+      this.updateUserUI(null);
+      this.tasks = [];
+      this.render();
+      this.openAuthModal();
+    } else {
+      this.currentUser = user;
+      this.updateUserUI(user);
+      this.closeAuthModal();
+      this.tasks = await TaskStorage.initTasks();
+      this.render();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Auth UI & Handlers
+  // -------------------------------------------------------------------------
+
+  openAuthModal() {
+    if (!this.authModal) return;
+    this.setAuthTab('login');
+    this.hideAuthError();
+    this.authModal.classList.add('is-open');
+    setTimeout(() => this.loginUsername?.focus(), 100);
+  }
+
+  closeAuthModal() {
+    if (!this.authModal) return;
+    this.authModal.classList.remove('is-open');
+    this.hideAuthError();
+  }
+
+  setAuthTab(tab) {
+    this.hideAuthError();
+    if (tab === 'register') {
+      this.tabRegister?.classList.add('is-active');
+      this.tabLogin?.classList.remove('is-active');
+      if (this.formRegister) this.formRegister.style.display = 'flex';
+      if (this.formLogin) this.formLogin.style.display = 'none';
+      setTimeout(() => this.registerUsername?.focus(), 50);
+    } else {
+      this.tabLogin?.classList.add('is-active');
+      this.tabRegister?.classList.remove('is-active');
+      if (this.formLogin) this.formLogin.style.display = 'flex';
+      if (this.formRegister) this.formRegister.style.display = 'none';
+      setTimeout(() => this.loginUsername?.focus(), 50);
+    }
+  }
+
+  showAuthError(message) {
+    if (!this.authErrorBox) return;
+    this.authErrorBox.textContent = message;
+    this.authErrorBox.style.display = 'block';
+  }
+
+  hideAuthError() {
+    if (!this.authErrorBox) return;
+    this.authErrorBox.textContent = '';
+    this.authErrorBox.style.display = 'none';
+  }
+
+  updateUserUI(user) {
+    if (user) {
+      if (this.userSection) this.userSection.style.display = 'flex';
+      if (this.userDisplayName) {
+        this.userDisplayName.textContent = user.display_name || user.username;
+      }
+    } else {
+      if (this.userSection) this.userSection.style.display = 'none';
+      if (this.userDisplayName) {
+        this.userDisplayName.textContent = '';
+      }
+    }
   }
 
   attachEvents() {
     // Theme
     this.btnThemeToggle?.addEventListener('click', () => this.toggleTheme());
+
+    // Auth Tabs
+    this.tabLogin?.addEventListener('click', () => this.setAuthTab('login'));
+    this.tabRegister?.addEventListener('click', () => this.setAuthTab('register'));
+
+    // Form Login Submit
+    this.formLogin?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      this.hideAuthError();
+
+      const username = this.loginUsername.value.trim();
+      const password = this.loginPassword.value;
+
+      if (!username || !password) {
+        this.showAuthError('Inserisci sia nome utente che password.');
+        return;
+      }
+
+      try {
+        const user = await TaskStorage.login(username, password);
+        this.currentUser = user;
+        this.updateUserUI(user);
+        this.closeAuthModal();
+        this.formLogin.reset();
+        this.tasks = await TaskStorage.initTasks();
+        this.render();
+        this.showToast(`Benvenuto, ${user.display_name || user.username}!`);
+      } catch (err) {
+        this.showAuthError(err.message || 'Errore durante il login.');
+      }
+    });
+
+    // Form Register Submit
+    this.formRegister?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      this.hideAuthError();
+
+      const username = this.registerUsername.value.trim();
+      const displayName = this.registerName.value.trim();
+      const password = this.registerPassword.value;
+      const confirmPassword = this.registerPasswordConfirm.value;
+
+      if (username.length < 3) {
+        this.showAuthError('Il nome utente deve contenere almeno 3 caratteri.');
+        return;
+      }
+
+      if (password.length < 6) {
+        this.showAuthError('La password deve contenere almeno 6 caratteri.');
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        this.showAuthError('Le password non coincidono. Riprova.');
+        return;
+      }
+
+      try {
+        const user = await TaskStorage.register(username, password, displayName);
+        this.currentUser = user;
+        this.updateUserUI(user);
+        this.closeAuthModal();
+        this.formRegister.reset();
+        this.tasks = []; // Nuovo utente inizia con la propria lavagna pulita
+        this.render();
+        this.showToast(`Account creato con successo! Benvenuto, ${user.display_name || user.username}!`);
+      } catch (err) {
+        this.showAuthError(err.message || 'Errore durante la registrazione.');
+      }
+    });
+
+    // Logout
+    this.btnLogout?.addEventListener('click', async () => {
+      if (confirm('Sei sicuro di voler uscire?')) {
+        await TaskStorage.logout();
+        this.currentUser = null;
+        this.updateUserUI(null);
+        this.tasks = [];
+        this.render();
+        this.openAuthModal();
+        this.showToast('Disconnessione effettuata.');
+      }
+    });
 
     // Search
     this.searchInput?.addEventListener('input', (e) => {
@@ -107,6 +285,10 @@ class EisenhowerApp {
     // Quick Add (Inbox)
     this.quickAddForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!this.currentUser) {
+        this.openAuthModal();
+        return;
+      }
       const val = this.quickInput.value.trim();
       if (!val) return;
       this.quickInput.value = '';
@@ -121,7 +303,13 @@ class EisenhowerApp {
     });
 
     // New Task Button (Modal)
-    this.btnNewTask?.addEventListener('click', () => this.openTaskModal());
+    this.btnNewTask?.addEventListener('click', () => {
+      if (!this.currentUser) {
+        this.openAuthModal();
+        return;
+      }
+      this.openTaskModal();
+    });
 
     // Modal close
     this.modalCancelBtn?.addEventListener('click', () => this.closeTaskModal());
@@ -136,13 +324,21 @@ class EisenhowerApp {
       await this.saveTaskModal();
     });
 
-    // Export / Import / Reset
+    // Export / Import
     this.btnExport?.addEventListener('click', () => {
+      if (!this.currentUser) {
+        this.openAuthModal();
+        return;
+      }
       TaskStorage.exportToJSON();
       this.showToast('Backup JSON esportato con successo');
     });
 
     this.btnImport?.addEventListener('click', () => {
+      if (!this.currentUser) {
+        this.openAuthModal();
+        return;
+      }
       this.fileInput.click();
     });
 
@@ -159,18 +355,12 @@ class EisenhowerApp {
       this.fileInput.value = '';
     });
 
-    this.btnResetDemo?.addEventListener('click', async () => {
-      if (confirm('Vuoi ripristinare le attività dimostrative iniziali?')) {
-        this.tasks = await TaskStorage.resetDemo();
-        this.render();
-        this.showToast('Dati demo ripristinati');
-      }
-    });
-
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.modalBackdrop.classList.contains('is-open')) {
-        this.closeTaskModal();
+      if (e.key === 'Escape') {
+        if (this.modalBackdrop.classList.contains('is-open')) {
+          this.closeTaskModal();
+        }
       }
     });
   }
@@ -258,39 +448,28 @@ class EisenhowerApp {
     const topRow = document.createElement('div');
     topRow.className = 'task-top-row';
 
-    // Checkbox
-    const checkWrap = document.createElement('div');
-    checkWrap.className = 'task-checkbox-wrapper';
+    const checkWrapper = document.createElement('div');
+    checkWrapper.className = 'task-check-wrapper';
+
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'task-checkbox';
-    checkbox.checked = !!task.completed;
+    checkbox.checked = task.completed;
+    checkbox.title = 'Segna come completata';
     checkbox.addEventListener('change', async (e) => {
-      const isCompleted = e.target.checked;
-      task.completed = isCompleted;
-      card.classList.toggle('is-completed', isCompleted);
-      await TaskStorage.updateTask(task.id, { completed: isCompleted });
+      e.stopPropagation();
+      task.completed = checkbox.checked;
+      card.classList.toggle('is-completed', task.completed);
+      await TaskStorage.updateTask(task.id, { completed: task.completed });
       this.updateStats();
     });
-    checkWrap.appendChild(checkbox);
-    topRow.appendChild(checkWrap);
 
-    // Content
-    const content = document.createElement('div');
-    content.className = 'task-content';
-
-    const titleEl = document.createElement('div');
+    const titleEl = document.createElement('span');
     titleEl.className = 'task-title';
     titleEl.textContent = task.title;
-    content.appendChild(titleEl);
 
-    if (task.description) {
-      const descEl = document.createElement('div');
-      descEl.className = 'task-description';
-      descEl.textContent = task.description;
-      content.appendChild(descEl);
-    }
-    topRow.appendChild(content);
+    checkWrapper.appendChild(checkbox);
+    checkWrapper.appendChild(titleEl);
 
     // Actions
     const actions = document.createElement('div');
@@ -299,69 +478,78 @@ class EisenhowerApp {
     const editBtn = document.createElement('button');
     editBtn.className = 'task-btn';
     editBtn.title = 'Modifica';
-    editBtn.textContent = '✏️';
+    editBtn.innerHTML = '✏️';
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.openTaskModal(task);
     });
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'task-btn btn-delete';
+    delBtn.className = 'task-btn task-btn-del';
     delBtn.title = 'Elimina';
-    delBtn.textContent = '🗑️';
+    delBtn.innerHTML = '🗑️';
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (confirm(`Eliminare "${task.title}"?`)) {
-        card.style.opacity = '0';
-        card.style.transform = 'scale(0.9)';
-        setTimeout(async () => {
-          this.tasks = this.tasks.filter(t => t.id !== task.id);
-          await TaskStorage.deleteTask(task.id);
-          this.render();
-          this.showToast('Attività eliminata');
-        }, 150);
+      if (confirm(`Eliminare l'attività "${task.title}"?`)) {
+        await TaskStorage.deleteTask(task.id);
+        this.tasks = this.tasks.filter(t => t.id !== task.id);
+        this.render();
+        this.showToast('Attività eliminata');
       }
     });
 
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
-    topRow.appendChild(actions);
 
+    topRow.appendChild(checkWrapper);
+    topRow.appendChild(actions);
     card.appendChild(topRow);
 
-    // Meta Row (Priority, Due Date, Tags)
-    const metaRow = document.createElement('div');
-    metaRow.className = 'task-meta-row';
-
-    const tagsGroup = document.createElement('div');
-    tagsGroup.className = 'task-tags-group';
-
-    // Priority badge
-    const pPill = document.createElement('span');
-    pPill.className = `priority-pill priority-${task.priority || 'medium'}`;
-    const pLabels = { high: 'Alta', medium: 'Media', low: 'Bassa' };
-    pPill.textContent = pLabels[task.priority] || 'Media';
-    tagsGroup.appendChild(pPill);
-
-    // Tags
-    if (task.tags && task.tags.length > 0) {
-      task.tags.forEach(tag => {
-        const tPill = document.createElement('span');
-        tPill.className = 'tag-pill';
-        tPill.textContent = `#${tag}`;
-        tagsGroup.appendChild(tPill);
-      });
+    // Description (se presente)
+    if (task.description) {
+      const descEl = document.createElement('p');
+      descEl.className = 'task-description';
+      descEl.textContent = task.description;
+      card.appendChild(descEl);
     }
-    metaRow.appendChild(tagsGroup);
+
+    // Meta row (Priorità, Scadenza, Tags)
+    const metaRow = document.createElement('div');
+    metaRow.className = 'task-meta';
+
+    // Priorità badge
+    const priorityLabels = { high: 'Alta', medium: 'Media', low: 'Bassa' };
+    const priorityBadge = document.createElement('span');
+    priorityBadge.className = `task-priority priority-${task.priority}`;
+    priorityBadge.textContent = priorityLabels[task.priority] || task.priority;
+    metaRow.appendChild(priorityBadge);
 
     // Due date
     if (task.due_date) {
-      const dateEl = document.createElement('span');
-      dateEl.className = 'due-date-pill';
-      const isUrgent = new Date(task.due_date) <= new Date();
-      if (isUrgent) dateEl.classList.add('is-urgent');
-      dateEl.textContent = `📅 ${task.due_date}`;
-      metaRow.appendChild(dateEl);
+      const dueBadge = document.createElement('span');
+      dueBadge.className = 'task-due';
+      
+      const isPast = new Date(task.due_date).setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+      if (isPast && !task.completed) {
+        dueBadge.classList.add('is-overdue');
+        dueBadge.title = 'Attività scaduta!';
+      }
+
+      dueBadge.textContent = `📅 ${task.due_date}`;
+      metaRow.appendChild(dueBadge);
+    }
+
+    // Tags
+    if (task.tags && task.tags.length > 0) {
+      const tagList = document.createElement('div');
+      tagList.className = 'task-tags';
+      task.tags.forEach(tag => {
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'task-tag';
+        tagSpan.textContent = `#${tag}`;
+        tagList.appendChild(tagSpan);
+      });
+      metaRow.appendChild(tagList);
     }
 
     card.appendChild(metaRow);
@@ -373,9 +561,14 @@ class EisenhowerApp {
     const completed = this.tasks.filter(t => t.completed).length;
     const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    if (this.statText) this.statText.textContent = `${completed}/${total} (${percent}%)`;
-    if (this.statFill) this.statFill.style.width = `${percent}%`;
+    if (this.statText) {
+      this.statText.textContent = `${completed}/${total} (${percent}%)`;
+    }
+    if (this.statFill) {
+      this.statFill.style.width = `${percent}%`;
+    }
 
+    // Aggiorna badge contatori
     const counts = { inbox: 0, q1: 0, q2: 0, q3: 0, q4: 0 };
     this.tasks.forEach(t => {
       if (counts[t.quadrant] !== undefined) counts[t.quadrant]++;

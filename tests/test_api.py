@@ -1,13 +1,24 @@
+import os
+import tempfile
 import pytest
 from fastapi.testclient import TestClient
-from api.index import app, reset_demo
+
+# Imposta database temporaneo per i test
+temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+os.environ["DATABASE_TEST_PATH"] = temp_db.name
+
+from api.index import app, init_db, get_db
 
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
-def run_around_tests():
-    """Ripristina lo stato demo prima di ogni test."""
-    reset_demo()
+def clean_database():
+    """Pulisce le tabelle prima di ogni test."""
+    init_db()
+    with get_db() as conn:
+        conn.execute("DELETE FROM sessions;")
+        conn.execute("DELETE FROM tasks;")
+        conn.execute("DELETE FROM users;")
     yield
 
 def test_health_check():
@@ -16,78 +27,161 @@ def test_health_check():
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
-def test_get_tasks_initial_state():
-    """Verifica che GET /api/tasks restituisca la lista dei task demo predefiniti."""
-    response = client.get("/api/tasks")
-    assert response.status_code == 200
-    tasks = response.json()
-    assert isinstance(tasks, list)
-    assert len(tasks) >= 5
-    # Verifica campi essenziali
-    first_task = tasks[0]
-    assert "id" in first_task
-    assert "title" in first_task
-    assert "quadrant" in first_task
-    assert "order" in first_task
-    assert "created_at" in first_task
+def test_no_demo_user_exists_by_default():
+    """Verifica che non esista alcun utente demo pre-configurato."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users;")
+        count = cursor.fetchone()[0]
+        assert count == 0
 
-def test_create_task_success():
-    """Verifica la creazione di una nuova attività con status 201 Created."""
+def test_register_new_user_success():
+    """Verifica la registrazione corretta di un nuovo utente."""
     payload = {
-        "title": "Nuova attività di test",
-        "description": "Dettagli dell'attività di test",
-        "quadrant": "inbox",
-        "priority": "high",
-        "due_date": "2026-11-10",
-        "tags": ["Test", "QA"]
+        "username": "marco_capuano",
+        "password": "Password123!",
+        "display_name": "Marco Capuano"
     }
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/auth/register", json=payload)
     assert response.status_code == 201
-    created = response.json()
-    assert created["title"] == payload["title"]
-    assert created["quadrant"] == "inbox"
-    assert created["priority"] == "high"
-    assert created["id"] is not None
-    assert len(created["id"]) > 0
-    assert created["created_at"] is not None
+    data = response.json()
+    assert "token" in data
+    assert data["user"]["username"] == "marco_capuano"
+    assert data["user"]["display_name"] == "Marco Capuano"
+    assert "id" in data["user"]
 
-def test_move_task():
-    """Verifica lo spostamento di un'attività tra quadranti con POST /api/tasks/move."""
-    move_payload = {
-        "task_id": "task-demo-5",
-        "target_quadrant": "q1",
-        "new_order": 3
+def test_register_duplicate_username_fails():
+    """Verifica che registrare due volte lo stesso username restituisca 400 Bad Request."""
+    payload = {
+        "username": "utente_duplicato",
+        "password": "Password123!"
     }
-    response = client.post("/api/tasks/move", json=move_payload)
-    assert response.status_code == 200
-    moved = response.json()
-    assert moved["id"] == "task-demo-5"
-    assert moved["quadrant"] == "q1"
-    assert moved["order"] == 3
+    res1 = client.post("/api/auth/register", json=payload)
+    assert res1.status_code == 201
 
-def test_update_task_not_found():
-    """Verifica che l'aggiornamento di un ID inesistente restituisca 404 Not Found."""
-    response = client.put("/api/tasks/id-inesistente-999", json={"title": "Titolo Aggiornato"})
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Task non trovata"
+    res2 = client.post("/api/auth/register", json=payload)
+    assert res2.status_code == 400
+    assert "già utilizzato" in res2.json()["detail"]
 
-def test_delete_task():
-    """Verifica la cancellazione di un'attività e successivo 404."""
-    del_response = client.delete("/api/tasks/task-demo-4")
-    assert del_response.status_code == 200
-    assert del_response.json()["success"] is True
+def test_login_success_and_failure():
+    """Verifica login con credenziali corrette ed errate."""
+    # Registrazione
+    client.post("/api/auth/register", json={
+        "username": "user_auth_test",
+        "password": "SecretPassword99"
+    })
 
-    # Verifica che il task non esista più
-    get_response = client.get("/api/tasks/task-demo-4")
-    assert get_response.status_code == 404
+    # Login corretto
+    login_res = client.post("/api/auth/login", json={
+        "username": "user_auth_test",
+        "password": "SecretPassword99"
+    })
+    assert login_res.status_code == 200
+    assert "token" in login_res.json()
+
+    # Login con password errata
+    wrong_pwd_res = client.post("/api/auth/login", json={
+        "username": "user_auth_test",
+        "password": "WrongPassword!"
+    })
+    assert wrong_pwd_res.status_code == 401
+
+    # Login con utente inesistente
+    non_existent = client.post("/api/auth/login", json={
+        "username": "non_esiste",
+        "password": "qualchepassword"
+    })
+    assert non_existent.status_code == 401
+
+def test_tasks_require_authentication():
+    """Verifica che gli endpoint dei task richiedano il token di autenticazione."""
+    res_get = client.get("/api/tasks")
+    assert res_get.status_code == 401
+
+    res_post = client.post("/api/tasks", json={"title": "Test Senza Auth"})
+    assert res_post.status_code == 401
+
+def test_user_task_isolation():
+    """Verifica che le attività siano isolate: l'Utente A non vede i task dell'Utente B."""
+    # Registra Utente 1
+    u1_res = client.post("/api/auth/register", json={"username": "utente1", "password": "Password1!"})
+    token1 = u1_res.json()["token"]
+
+    # Registra Utente 2
+    u2_res = client.post("/api/auth/register", json={"username": "utente2", "password": "Password2!"})
+    token2 = u2_res.json()["token"]
+
+    # Utente 1 crea un task
+    client.post(
+        "/api/tasks",
+        headers={"Authorization": f"Bearer {token1}"},
+        json={"title": "Task Privato Utente 1", "quadrant": "q1", "priority": "high"}
+    )
+
+    # Utente 1 deve vedere 1 task
+    tasks_u1 = client.get("/api/tasks", headers={"Authorization": f"Bearer {token1}"}).json()
+    assert len(tasks_u1) == 1
+    assert tasks_u1[0]["title"] == "Task Privato Utente 1"
+
+    # Utente 2 non deve vedere alcun task (lavagna pulita/vuota)
+    tasks_u2 = client.get("/api/tasks", headers={"Authorization": f"Bearer {token2}"}).json()
+    assert len(tasks_u2) == 0
+
+def test_task_lifecycle_for_user():
+    """Verifica ciclo di vita task: crea, sposta, aggiorna, cancella."""
+    # Registra e logga utente
+    reg = client.post("/api/auth/register", json={"username": "lifecycle_user", "password": "Password123!"})
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Crea
+    create_res = client.post(
+        "/api/tasks",
+        headers=headers,
+        json={
+            "title": "Compilare relazione",
+            "description": "Dettagli relazione",
+            "quadrant": "inbox",
+            "priority": "medium",
+            "tags": ["Lavoro"]
+        }
+    )
+    assert create_res.status_code == 201
+    task_id = create_res.json()["id"]
+
+    # 2. Sposta
+    move_res = client.post(
+        "/api/tasks/move",
+        headers=headers,
+        json={"task_id": task_id, "target_quadrant": "q2", "new_order": 0}
+    )
+    assert move_res.status_code == 200
+    assert move_res.json()["quadrant"] == "q2"
+
+    # 3. Aggiorna
+    update_res = client.put(
+        f"/api/tasks/{task_id}",
+        headers=headers,
+        json={"title": "Compilare relazione finale", "completed": True}
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["title"] == "Compilare relazione finale"
+    assert update_res.json()["completed"] is True
+
+    # 4. Cancella
+    del_res = client.delete(f"/api/tasks/{task_id}", headers=headers)
+    assert del_res.status_code == 200
+
+    # 5. Verifica che non esista più
+    get_res = client.get(f"/api/tasks/{task_id}", headers=headers)
+    assert get_res.status_code == 404
 
 def test_static_files_served():
-    """Verifica che i file statici (HTML, CSS, JS) vengano serviti correttamente."""
+    """Verifica che i file statici vengano serviti correttamente."""
     response = client.get("/")
     assert response.status_code == 200
     assert "Matrice di Eisenhower" in response.text
 
     css_res = client.get("/css/style.css")
     assert css_res.status_code == 200
-    assert "eisenhower" in css_res.text.lower()
-
+    assert "auth-modal" in css_res.text
