@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matrice di Eisenhower — Task & Productivity Manager</title>
+  
+  <!-- Modern Font: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/css/style.css">
+  
+  <!-- SortableJS per Drag & Drop fluido e touch-friendly -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+
+  <!-- =========================================================================
+       Header & Top Navigation
+       ========================================================================= -->
+  <header class="app-header">
+    <div class="header-container">
+      
+      <!-- Brand & Title -->
+      <div class="brand-section">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Eisenhower Matrix</h1>
+        </div>
+        <span class="brand-badge">Produttività 2.0</span>
+      </div>
+
+      <!-- Quick Search -->
+      <div class="search-filter-section">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" class="search-input" placeholder="Cerca attività per titolo, descrizione o #tag...">
+        </div>
+      </div>
+
+      <!-- Header Actions & Stats -->
+      <div class="header-actions">
+        <!-- Productivity Mini Stats -->
+        <div class="productivity-stats" title="Completamento attività totali">
+          <span>Completate:</span>
+          <strong id="stat-completed-text">0/0 (0%)</strong>
+          <div class="stat-progress-bar">
+            <div id="stat-progress-fill" class="stat-progress-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Nuova Attività -->
+        <button id="btn-new-task" class="btn btn-primary">
+          <span>+</span>
+          <span>Nuova Attività</span>
+        </button>
+
+        <!-- Esporta / Importa / Dati Demo -->
+        <button id="btn-export" class="btn btn-secondary" title="Scarica backup JSON">
+          <span>⬇️ Esporta</span>
+        </button>
+        <button id="btn-import" class="btn btn-secondary" title="Carica backup JSON">
+          <span>⬆️ Importa</span>
+        </button>
+        <input type="file" id="file-import-input" accept=".json" style="display: none;">
+
+        <button id="btn-reset-demo" class="btn btn-secondary" title="Ripristina attività dimostrative">
+          <span>🔄 Demo</span>
+        </button>
+
+        <!-- Toggle Dark/Light Theme -->
+        <button id="btn-theme-toggle" class="btn-icon" title="Cambia tema chiaro/scuro">
+          ☀️
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       Main Content: Sidebar Inbox + Eisenhower 2x2 Grid
+       ========================================================================= -->
+  <main class="app-main">
+    
+    <!-- Sidebar: Inbox (Attività da Smistare) -->
+    <aside class="inbox-panel">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-indicator"></div>
+          <h2 class="panel-title">Inbox / Da Smistare</h2>
+        </div>
+        <span id="count-inbox" class="task-count-badge">0</span>
+      </div>
+
+      <!-- Quick Add In-line -->
+      <div class="inbox-quick-add">
+        <form id="quick-add-form" class="quick-add-form">
+          <input type="text" id="quick-input" class="quick-input" placeholder="Cosa devi fare? Premi Invio..." autocomplete="off">
+          <button type="submit" class="btn btn-primary" style="padding: 6px 12px;">+</button>
+        </form>
+      </div>
+
+      <!-- Inbox Task Drop Container -->
+      <div id="list-inbox" class="task-list" data-quadrant="inbox">
+        <div class="empty-placeholder">
+          <div class="empty-placeholder-icon">📥</div>
+          <div class="empty-placeholder-text">Nessuna attività da smistare</div>
+          <small style="opacity: 0.7;">Aggiungi qui sopra o trascina un'attività</small>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Eisenhower Matrix Container -->
+    <section class="matrix-container">
+      
+      <!-- Axis Label Top (Urgenza) -->
+      <div class="axis-header-urgency">
+        <div class="axis-label">⚡ URGENTE</div>
+        <div class="axis-label">⏳ NON URGENTE</div>
+      </div>
+
+      <!-- 2x2 Grid -->
+      <div class="matrix-grid">
+        
+        <!-- Q1: Urgente & Importante (Do First) -->
+        <div class="quadrant-card q1-card" id="quadrant-q1">
+          <div class="quadrant-header">
+            <div class="quadrant-title-group">
+              <div class="quadrant-dot"></div>
+              <div>
+                <span class="quadrant-tag">Q1 • Importante & Urgente</span>
+                <h3 class="quadrant-title">Fai Subito (Do)</h3>
+                <p class="quadrant-subtitle">Crisi, scadenze imminenti e problemi critici</p>
+              </div>
+            </div>
+            <span id="count-q1" class="task-count-badge">0</span>
+          </div>
+
+          <div id="list-q1" class="task-list" data-quadrant="q1">
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-icon">🔥</div>
+              <div class="empty-placeholder-text">Nessuna attività urgente e importante</div>
+              <small style="opacity: 0.7;">Trascina qui le priorità assolute</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q2: Non Urgente ma Importante (Schedule) -->
+        <div class="quadrant-card q2-card" id="quadrant-q2">
+          <div class="quadrant-header">
+            <div class="quadrant-title-group">
+              <div class="quadrant-dot"></div>
+              <div>
+                <span class="quadrant-tag">Q2 • Importante & Non Urgente</span>
+                <h3 class="quadrant-title">Pianifica (Schedule)</h3>
+                <p class="quadrant-subtitle">Obiettivi strategici, crescita, salute e prevenzione</p>
+              </div>
+            </div>
+            <span id="count-q2" class="task-count-badge">0</span>
+          </div>
+
+          <div id="list-q2" class="task-list" data-quadrant="q2">
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-icon">📅</div>
+              <div class="empty-placeholder-text">Nessuna attività pianificata</div>
+              <small style="opacity: 0.7;">Pianifica qui le attività ad alto valore</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q3: Urgente ma Non Importante (Delegate) -->
+        <div class="quadrant-card q3-card" id="quadrant-q3">
+          <div class="quadrant-header">
+            <div class="quadrant-title-group">
+              <div class="quadrant-dot"></div>
+              <div>
+                <span class="quadrant-tag">Q3 • Non Importante & Urgente</span>
+                <h3 class="quadrant-title">Delega (Delegate)</h3>
+                <p class="quadrant-subtitle">Interruzioni, riunioni evitabili, richieste altrui</p>
+              </div>
+            </div>
+            <span id="count-q3" class="task-count-badge">0</span>
+          </div>
+
+          <div id="list-q3" class="task-list" data-quadrant="q3">
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-icon">👥</div>
+              <div class="empty-placeholder-text">Nessuna attività da delegare</div>
+              <small style="opacity: 0.7;">Assegna a terzi o automatizza</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q4: Non Urgente & Non Importante (Eliminate) -->
+        <div class="quadrant-card q4-card" id="quadrant-q4">
+          <div class="quadrant-header">
+            <div class="quadrant-title-group">
+              <div class="quadrant-dot"></div>
+              <div>
+                <span class="quadrant-tag">Q4 • Non Importante & Non Urgente</span>
+                <h3 class="quadrant-title">Elimina (Eliminate)</h3>
+                <p class="quadrant-subtitle">Distrazioni, perdite di tempo e attività futili</p>
+              </div>
+            </div>
+            <span id="count-q4" class="task-count-badge">0</span>
+          </div>
+
+          <div id="list-q4" class="task-list" data-quadrant="q4">
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-icon">🗑️</div>
+              <div class="empty-placeholder-text">Nessuna attività da eliminare</div>
+              <small style="opacity: 0.7;">Identifica ed elimina i consumatori di tempo</small>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       Modal: Creazione / Modifica Attività
+       ========================================================================= -->
+  <div id="task-modal" class="modal-backdrop">
+    <div class="modal-window">
+      
+      <div class="modal-header">
+        <h3 id="modal-title" class="modal-title">Nuova Attività</h3>
+        <button id="modal-close-btn" class="task-btn" style="font-size: 1.1rem;">✕</button>
+      </div>
+
+      <form id="task-form">
+        <div class="modal-body">
+          
+          <div class="form-group">
+            <label class="form-label" for="form-title">Titolo Attività *</label>
+            <input type="text" id="form-title" class="form-input" placeholder="Es. Preparare report finanziario..." required maxlength="120">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="form-desc">Descrizione / Note (Opzionale)</label>
+            <textarea id="form-desc" class="form-textarea" rows="3" placeholder="Aggiungi contesto o dettagli utili..." maxlength="500"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="form-quadrant">Quadrante di Destinazione</label>
+              <select id="form-quadrant" class="form-select">
+                <option value="inbox">📥 Inbox / Da Smistare</option>
+                <option value="q1">🔥 Q1: Fai Subito (Urgente & Importante)</option>
+                <option value="q2">📅 Q2: Pianifica (Importante & Non Urgente)</option>
+                <option value="q3">👥 Q3: Delega (Urgente & Non Importante)</option>
+                <option value="q4">🗑️ Q4: Elimina (Non Urgente & Non Importante)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="form-priority">Priorità</label>
+              <select id="form-priority" class="form-select">
+                <option value="high">🔴 Alta</option>
+                <option value="medium" selected>🟡 Media</option>
+                <option value="low">🟢 Bassa</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="form-due-date">Data di Scadenza</label>
+              <input type="date" id="form-due-date" class="form-input">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="form-tags">Tag (separati da virgola)</label>
+              <input type="text" id="form-tags" class="form-input" placeholder="Es. Lavoro, Bug, Finanza">
+            </div>
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="modal-cancel-btn" class="btn btn-secondary">Annulla</button>
+          <button type="submit" class="btn btn-primary">Salva Attività</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Entry Script (ES6 Modules) -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

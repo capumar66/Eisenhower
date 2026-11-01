@@ -1,0 +1,993 @@
+/* ==========================================================================
+   Eisenhower Matrix - Modern Design System (CSS Variables & Global Styles)
+   ========================================================================== */
+
+:root {
+  /* Color Palette - Dark Theme (Default) */
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: rgba(17, 24, 39, 0.7);
+  --bg-card-hover: rgba(31, 41, 55, 0.85);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(99, 102, 241, 0.5);
+
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
+
+  /* Quadrant Colors & Glows */
+  --q1-accent: #f43f5e; /* Urgente & Importante - Do First */
+  --q1-bg: rgba(244, 63, 94, 0.08);
+  --q1-border: rgba(244, 63, 94, 0.25);
+  --q1-glow: rgba(244, 63, 94, 0.2);
+
+  --q2-accent: #6366f1; /* Non Urgente & Importante - Schedule */
+  --q2-bg: rgba(99, 102, 241, 0.08);
+  --q2-border: rgba(99, 102, 241, 0.25);
+  --q2-glow: rgba(99, 102, 241, 0.2);
+
+  --q3-accent: #f59e0b; /* Urgente & Non Importante - Delegate */
+  --q3-bg: rgba(245, 158, 11, 0.08);
+  --q3-border: rgba(245, 158, 11, 0.25);
+  --q3-glow: rgba(245, 158, 11, 0.2);
+
+  --q4-accent: #64748b; /* Non Urgente & Non Importante - Eliminate */
+  --q4-bg: rgba(100, 116, 139, 0.08);
+  --q4-border: rgba(100, 116, 139, 0.25);
+  --q4-glow: rgba(100, 116, 139, 0.2);
+
+  --inbox-accent: #06b6d4; /* Inbox / Backlog */
+  --inbox-bg: rgba(6, 182, 212, 0.08);
+  --inbox-border: rgba(6, 182, 212, 0.25);
+  --inbox-glow: rgba(6, 182, 212, 0.2);
+
+  /* Priorities */
+  --p-high: #f43f5e;
+  --p-med: #f59e0b;
+  --p-low: #10b981;
+
+  /* UI Tokens */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.25);
+  --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-hover: #ffffff;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-focus: rgba(99, 102, 241, 0.6);
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #94a3b8;
+
+  --q1-bg: rgba(244, 63, 94, 0.05);
+  --q2-bg: rgba(99, 102, 241, 0.05);
+  --q3-bg: rgba(245, 158, 11, 0.05);
+  --q4-bg: rgba(100, 116, 139, 0.05);
+  --inbox-bg: rgba(6, 182, 212, 0.05);
+
+  --shadow-subtle: 0 4px 15px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+/* ==========================================================================
+   Base & Reset
+   ========================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(244, 63, 94, 0.05) 0%, transparent 40%);
+}
+
+/* Scrollbar Custom */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+/* ==========================================================================
+   Header & Navigation Bar
+   ========================================================================== */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(10, 14, 23, 0.75);
+  border-bottom: 1px solid var(--border-color);
+  padding: 12px 24px;
+}
+
+[data-theme="light"] .app-header {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.header-container {
+  max-width: 1700px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--q1-accent), var(--q2-accent));
+  display: grid;
+  place-items: center;
+  color: white;
+  box-shadow: 0 4px 12px var(--q2-glow);
+}
+
+.brand-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, var(--text-main) 0%, var(--text-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--q2-accent);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  text-transform: uppercase;
+}
+
+.search-filter-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  max-width: 500px;
+}
+
+.search-box {
+  position: relative;
+  width: 100%;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 14px 8px 36px;
+  font-size: 0.875rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  pointer-events: none;
+  font-size: 0.85rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Stats Mini Bar */
+.productivity-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.stat-progress-bar {
+  width: 60px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stat-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--inbox-accent), var(--p-low));
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-icon {
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+.btn-icon:hover {
+  color: var(--text-main);
+  background: var(--bg-card-hover);
+}
+
+/* ==========================================================================
+   Main Workspace Layout
+   ========================================================================== */
+
+.app-main {
+  flex: 1;
+  max-width: 1700px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Sidebar: Inbox (Da Smistare)
+   ========================================================================== */
+
+.inbox-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--inbox-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-subtle);
+  height: calc(100vh - 100px);
+  position: sticky;
+  top: 76px;
+}
+
+.panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--inbox-accent);
+  box-shadow: 0 0 8px var(--inbox-glow);
+}
+
+.panel-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.task-count-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.inbox-quick-add {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.quick-add-form {
+  display: flex;
+  gap: 6px;
+}
+
+.quick-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  outline: none;
+}
+
+.quick-input:focus {
+  border-color: var(--inbox-accent);
+}
+
+/* ==========================================================================
+   Matrix Grid (2x2 Eisenhower)
+   ========================================================================== */
+
+.matrix-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Axis Labels */
+.axis-header-urgency {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.axis-label {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.axis-label::before, .axis-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.matrix-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+}
+
+@media (max-width: 800px) {
+  .matrix-grid {
+    grid-template-columns: 1fr;
+  }
+  .axis-header-urgency {
+    display: none;
+  }
+}
+
+/* Quadrant Card Component */
+.quadrant-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.quadrant-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+/* Specific Quadrant Colors */
+.q1-card {
+  border-color: var(--q1-border);
+}
+.q1-card::before {
+  background: var(--q1-accent);
+  box-shadow: 0 0 12px var(--q1-glow);
+}
+.q1-card .quadrant-dot {
+  background: var(--q1-accent);
+  box-shadow: 0 0 8px var(--q1-glow);
+}
+
+.q2-card {
+  border-color: var(--q2-border);
+}
+.q2-card::before {
+  background: var(--q2-accent);
+  box-shadow: 0 0 12px var(--q2-glow);
+}
+.q2-card .quadrant-dot {
+  background: var(--q2-accent);
+  box-shadow: 0 0 8px var(--q2-glow);
+}
+
+.q3-card {
+  border-color: var(--q3-border);
+}
+.q3-card::before {
+  background: var(--q3-accent);
+  box-shadow: 0 0 12px var(--q3-glow);
+}
+.q3-card .quadrant-dot {
+  background: var(--q3-accent);
+  box-shadow: 0 0 8px var(--q3-glow);
+}
+
+.q4-card {
+  border-color: var(--q4-border);
+}
+.q4-card::before {
+  background: var(--q4-accent);
+  box-shadow: 0 0 12px var(--q4-glow);
+}
+.q4-card .quadrant-dot {
+  background: var(--q4-accent);
+  box-shadow: 0 0 8px var(--q4-glow);
+}
+
+.quadrant-header {
+  padding: 10px 14px 8px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.quadrant-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.quadrant-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.quadrant-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.quadrant-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin-top: 1px;
+  letter-spacing: -0.01em;
+}
+
+.quadrant-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ==========================================================================
+   Task List & Drop Zones (SortableJS Area)
+   ========================================================================== */
+
+.task-list {
+  flex: 1;
+  padding: 8px 10px;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  position: relative;
+  transition: background-color var(--transition-fast);
+}
+
+.dragging-active .task-list {
+  background: rgba(255, 255, 255, 0.01);
+  outline: 2px dashed rgba(255, 255, 255, 0.08);
+  outline-offset: -4px;
+  border-radius: var(--radius-sm);
+}
+
+/* Empty Placeholder */
+.empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  pointer-events: none;
+  gap: 4px;
+  height: 100%;
+}
+
+.empty-placeholder-icon {
+  font-size: 1.15rem;
+  opacity: 0.4;
+}
+
+.empty-placeholder-text {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Task Card Component - Compact & Sleek
+   ========================================================================== */
+
+.task-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: grab;
+  user-select: none;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), opacity var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.task-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.task-card:active {
+  cursor: grabbing;
+}
+
+/* Card Completed State */
+.task-card.is-completed {
+  opacity: 0.55;
+  background: rgba(17, 24, 39, 0.35);
+}
+
+.task-card.is-completed .task-title {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+/* Dragging Classes (SortableJS) */
+.sortable-ghost {
+  opacity: 0.25;
+  background: rgba(99, 102, 241, 0.1) !important;
+  border: 2px dashed var(--q2-accent) !important;
+  box-shadow: none !important;
+}
+
+.sortable-chosen {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.sortable-drag {
+  transform: rotate(1deg);
+  opacity: 0.95;
+}
+
+.task-top-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.task-checkbox-wrapper {
+  margin-top: 1px;
+}
+
+.task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all var(--transition-fast);
+}
+
+.task-checkbox:checked {
+  background: var(--p-low);
+  border-color: var(--p-low);
+}
+
+.task-checkbox:checked::after {
+  content: "✓";
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.task-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.task-description {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.3;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.task-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.68rem;
+  flex-wrap: wrap;
+}
+
+.task-tags-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.priority-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+}
+
+.priority-high {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--p-high);
+}
+
+.priority-medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--p-med);
+}
+
+.priority-low {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--p-low);
+}
+
+.tag-pill {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+}
+
+.due-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-dim);
+  font-size: 0.65rem;
+}
+
+.due-date-pill.is-urgent {
+  color: var(--q1-accent);
+  font-weight: 600;
+}
+
+/* Card Actions */
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0.35;
+  transition: opacity var(--transition-fast);
+}
+
+.task-card:hover .task-actions {
+  opacity: 1;
+}
+
+.task-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+}
+
+.task-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.task-btn.btn-delete:hover {
+  color: var(--q1-accent);
+}
+
+/* ==========================================================================
+   Modal Dialog (Create / Edit Task)
+   ========================================================================== */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  place-items: center;
+  padding: 20px;
+}
+
+.modal-backdrop.is-open {
+  display: grid;
+}
+
+.modal-window {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modal-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.form-input, .form-textarea, .form-select {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.form-input:focus, .form-textarea:focus, .form-select:focus {
+  border-color: var(--border-focus);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ==========================================================================
+   Toast Notifications
+   ========================================================================== */
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: toastSlideUp 0.25s ease-out;
+}
+
+@keyframes toastSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
