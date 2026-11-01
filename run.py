@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import uvicorn
 
+
 # Assicura che la directory radice sia nel sys.path
 root_dir = Path(__file__).resolve().parent
 if str(root_dir) not in sys.path:
