@@ -20,17 +20,31 @@ from pydantic import BaseModel, Field
 # Configurazione Database SQLite (con supporto Vercel /tmp)
 # ---------------------------------------------------------------------------
 
+_forced_tmp_db = False
+
 def get_db_path() -> Path:
+    global _forced_tmp_db
     if os.environ.get("DATABASE_TEST_PATH"):
         return Path(os.environ["DATABASE_TEST_PATH"])
-    if os.environ.get("VERCEL"):
+    if _forced_tmp_db or os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         return Path("/tmp/eisenhower.db")
-    return Path(__file__).resolve().parent.parent / "eisenhower.db"
+    try:
+        local_path = Path(__file__).resolve().parent.parent / "eisenhower.db"
+        if not os.access(local_path.parent, os.W_OK):
+            return Path("/tmp/eisenhower.db")
+        return local_path
+    except Exception:
+        return Path("/tmp/eisenhower.db")
 
 @contextmanager
 def get_db() -> Generator[sqlite3.Connection, None, None]:
+    global _forced_tmp_db
     db_path = get_db_path()
-    conn = sqlite3.connect(str(db_path))
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.OperationalError:
+        _forced_tmp_db = True
+        conn = sqlite3.connect("/tmp/eisenhower.db")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     try:
