@@ -11,12 +11,15 @@ const SUPABASE_ANON_KEY = 'eisenhower_supabase_anon_key';
 const API_BASE = '/api';
 
 let supabaseClient = null;
+let serverConfigLoaded = false;
+let envSupabaseUrl = null;
+let envSupabaseKey = null;
 
 function getSupabase() {
   if (supabaseClient) return supabaseClient;
   try {
-    const url = localStorage.getItem(SUPABASE_URL_KEY);
-    const key = localStorage.getItem(SUPABASE_ANON_KEY);
+    const url = envSupabaseUrl || localStorage.getItem(SUPABASE_URL_KEY);
+    const key = envSupabaseKey || localStorage.getItem(SUPABASE_ANON_KEY);
     if (url && key && window.supabase && typeof window.supabase.createClient === 'function') {
       supabaseClient = window.supabase.createClient(url.trim(), key.trim());
       return supabaseClient;
@@ -31,15 +34,27 @@ export const TaskStorage = {
   /**
    * --- Configurazione Supabase Cloud ---
    */
-  hasSupabase() {
-    return !!getSupabase();
+  async initSupabase() {
+    if (!serverConfigLoaded) {
+      try {
+        const res = await fetch(`${API_BASE}/config`);
+        if (res.ok) {
+          const cfg = await res.json();
+          if (cfg.supabase_url && cfg.supabase_anon_key) {
+            envSupabaseUrl = cfg.supabase_url;
+            envSupabaseKey = cfg.supabase_anon_key;
+          }
+        }
+      } catch (e) {
+        console.warn('Impossibile recuperare config dal server:', e);
+      }
+      serverConfigLoaded = true;
+    }
+    return getSupabase();
   },
 
-  getSupabaseConfig() {
-    return {
-      url: localStorage.getItem(SUPABASE_URL_KEY) || '',
-      key: localStorage.getItem(SUPABASE_ANON_KEY) || ''
-    };
+  hasSupabase() {
+    return !!getSupabase();
   },
 
   setSupabaseConfig(url, key) {

@@ -416,6 +416,14 @@ def health_check():
     """Verifica lo stato dell'API."""
     return {"status": "healthy", "service": "eisenhower-matrix-api"}
 
+@api_router.get("/config")
+def get_public_config():
+    """Restituisce le configurazioni del client se impostate come variabili d'ambiente sul server."""
+    return {
+        "supabase_url": os.environ.get("SUPABASE_URL", "").strip(),
+        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    }
+
 @api_router.get("/tasks", response_model=List[Task])
 def get_tasks(current_user: UserResponse = Depends(get_current_user)):
     """Recupera la lista delle attività dell'utente loggato, ordinate per quadrante e ordine."""

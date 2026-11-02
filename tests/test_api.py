@@ -216,3 +216,11 @@ def test_static_files_served():
     css_res = client.get("/css/style.css")
     assert css_res.status_code == 200
     assert "auth-modal" in css_res.text
+
+def test_config_endpoint():
+    """Verifica che l'endpoint /api/config risponda con i parametri di configurazione."""
+    res = client.get("/api/config")
+    assert res.status_code == 200
+    data = res.json()
+    assert "supabase_url" in data
+    assert "supabase_anon_key" in data

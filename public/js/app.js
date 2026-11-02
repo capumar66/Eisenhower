@@ -74,18 +74,6 @@ class EisenhowerApp {
     this.quickAddForm = document.querySelector('#quick-add-form');
     this.quickInput = document.querySelector('#quick-input');
 
-    // Supabase Modal Elements
-    this.btnOpenSupabase = document.querySelector('#btn-open-supabase');
-    this.btnAuthOpenSupabase = document.querySelector('#btn-auth-open-supabase');
-    this.supabaseModal = document.querySelector('#supabase-modal');
-    this.supabaseModalCloseBtn = document.querySelector('#supabase-modal-close-btn');
-    this.supabaseConfigForm = document.querySelector('#supabase-config-form');
-    this.supabaseUrlInput = document.querySelector('#supabase-url');
-    this.supabaseAnonKeyInput = document.querySelector('#supabase-anon-key');
-    this.supabaseStatusText = document.querySelector('#supabase-status-text');
-    this.btnSupabaseDisconnect = document.querySelector('#btn-supabase-disconnect');
-    this.supabasePillIcon = document.querySelector('#supabase-pill-icon');
-
     // Task Modal
     this.modalBackdrop = document.querySelector('#task-modal');
     this.modalTitle = document.querySelector('#modal-title');
@@ -124,7 +112,7 @@ class EisenhowerApp {
   }
 
   async boot() {
-    this.updateSupabaseStatusUI();
+    await TaskStorage.initSupabase();
     setupDragAndDrop(this.handleTaskMoved.bind(this));
 
     const user = await TaskStorage.checkAuthStatus();
@@ -165,36 +153,6 @@ class EisenhowerApp {
     if (!this.currentUser) return;
     this.authModal.classList.remove('is-open');
     this.hideAuthError();
-  }
-
-  // -------------------------------------------------------------------------
-  // Supabase Cloud Modal UI
-  // -------------------------------------------------------------------------
-
-  openSupabaseModal() {
-    if (!this.supabaseModal) return;
-    const cfg = TaskStorage.getSupabaseConfig();
-    if (this.supabaseUrlInput) this.supabaseUrlInput.value = cfg.url || '';
-    if (this.supabaseAnonKeyInput) this.supabaseAnonKeyInput.value = cfg.key || '';
-    this.updateSupabaseStatusUI();
-    this.supabaseModal.classList.add('is-open');
-  }
-
-  closeSupabaseModal() {
-    if (!this.supabaseModal) return;
-    this.supabaseModal.classList.remove('is-open');
-  }
-
-  updateSupabaseStatusUI() {
-    const isCloud = TaskStorage.hasSupabase();
-    if (this.supabaseStatusText) {
-      this.supabaseStatusText.innerHTML = isCloud
-        ? '<span style="color: #10b981; font-weight: 600;">● Connesso a Supabase Cloud</span>'
-        : '<span style="color: #6366f1; font-weight: 600;">● Locale (Backend Python)</span>';
-    }
-    if (this.supabasePillIcon) {
-      this.supabasePillIcon.textContent = isCloud ? '☁️' : '⚡';
-    }
   }
 
   setAuthTab(tab) {
@@ -258,39 +216,6 @@ class EisenhowerApp {
         if (!this.currentUser) return; // Non chiudere se non autenticato
         this.closeAuthModal();
       }
-    });
-
-    // Supabase Cloud Modal
-    this.btnOpenSupabase?.addEventListener('click', () => this.openSupabaseModal());
-    this.btnAuthOpenSupabase?.addEventListener('click', () => this.openSupabaseModal());
-    this.supabaseModalCloseBtn?.addEventListener('click', () => this.closeSupabaseModal());
-    this.supabaseModal?.addEventListener('click', (e) => {
-      if (e.target === this.supabaseModal) this.closeSupabaseModal();
-    });
-
-    this.supabaseConfigForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const url = this.supabaseUrlInput?.value.trim();
-      const key = this.supabaseAnonKeyInput?.value.trim();
-      if (!url || !key) {
-        alert('Inserisci sia l\'URL che l\'Anon Key di Supabase.');
-        return;
-      }
-      TaskStorage.setSupabaseConfig(url, key);
-      this.updateSupabaseStatusUI();
-      this.closeSupabaseModal();
-      this.showToast('Configurazione Supabase salvata con successo!');
-      await this.boot();
-    });
-
-    this.btnSupabaseDisconnect?.addEventListener('click', async () => {
-      TaskStorage.clearSupabaseConfig();
-      if (this.supabaseUrlInput) this.supabaseUrlInput.value = '';
-      if (this.supabaseAnonKeyInput) this.supabaseAnonKeyInput.value = '';
-      this.updateSupabaseStatusUI();
-      this.closeSupabaseModal();
-      this.showToast('Ripristinato backend locale');
-      await this.boot();
     });
 
     // Auth Tabs
@@ -502,10 +427,6 @@ class EisenhowerApp {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (this.supabaseModal?.classList.contains('is-open')) {
-          this.closeSupabaseModal();
-          return;
-        }
         if (this.modalBackdrop?.classList.contains('is-open')) {
           this.closeTaskModal();
           return;
@@ -823,3 +744,18 @@ class EisenhowerApp {
 document.addEventListener('DOMContentLoaded', () => {
   new EisenhowerApp();
 });
+
+// Utility di configurazione riservata all'amministratore (solo via Developer Console, invisibile nella UI)
+window.configureSupabase = (url, key) => {
+  if (!url || !key) {
+    console.error('Uso: window.configureSupabase("https://xyz.supabase.co", "anon-key")');
+    return;
+  }
+  TaskStorage.setSupabaseConfig(url, key);
+  console.log('✅ Supabase configurato. Ricarica la pagina per renderlo attivo.');
+};
+
+window.clearSupabase = () => {
+  TaskStorage.clearSupabaseConfig();
+  console.log('✅ Configurazione Supabase rimossa. Ricarica la pagina per ripristinare il backend locale.');
+};

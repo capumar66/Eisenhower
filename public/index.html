@@ -81,12 +81,6 @@
           <span>👤 Accedi / Registrati</span>
         </button>
 
-        <!-- Configurazione Supabase Cloud Database -->
-        <button id="btn-open-supabase" class="btn btn-secondary btn-sm" title="Impostazioni Database Cloud Supabase">
-          <span id="supabase-pill-icon">⚡</span>
-          <span>Supabase</span>
-        </button>
-
         <!-- User Profile & Logout (visibile dopo login) -->
         <div id="user-section" class="user-section" style="display: none;">
           <div class="user-pill" id="user-profile-badge" title="Profilo utente">
@@ -327,82 +321,6 @@
         </button>
       </form>
 
-      <!-- Supabase Cloud Hint -->
-      <div class="auth-cloud-hint">
-        <button type="button" id="btn-auth-open-supabase" class="link-btn">
-          ⚡ Vuoi usare un Database Cloud su Vercel? Configura Supabase
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =========================================================================
-       Modal: Configurazione Supabase Cloud (Consigliato per Vercel)
-       ========================================================================= -->
-  <div id="supabase-modal" class="modal-backdrop">
-    <div class="modal-window" style="max-width: 520px;">
-      
-      <div class="modal-header">
-        <h3 class="modal-title">⚡ Database Cloud Supabase</h3>
-        <button id="supabase-modal-close-btn" class="task-btn" style="font-size: 1.1rem;">✕</button>
-      </div>
-
-      <form id="supabase-config-form">
-        <div class="modal-body">
-          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px;">
-            Collega il tuo progetto <strong>Supabase</strong> per salvare utenti e attività direttamente su PostgreSQL in Cloud. Risolve ogni limitazione del filesystem serverless di Vercel.
-          </p>
-
-          <div class="form-group">
-            <label class="form-label" for="supabase-url">Project URL Supabase</label>
-            <input type="url" id="supabase-url" class="form-input" placeholder="Es. https://xyzcompany.supabase.co" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="supabase-anon-key">Anon / Public API Key</label>
-            <input type="text" id="supabase-anon-key" class="form-input" placeholder="Es. eyJhbGciOiJIUzI1NiIsInR5cCI6..." required>
-          </div>
-
-          <div class="supabase-status-info">
-            Stato attuale: <strong id="supabase-status-text">Locale (Backend Python)</strong>
-          </div>
-
-          <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 14px; font-size: 0.8rem; line-height: 1.5; color: #f59e0b;">
-            ⚠️ <strong>Importante per l'accesso immediato:</strong><br>
-            Nella dashboard di Supabase vai su <strong>Authentication → Providers → Email</strong> e disattiva l'opzione <strong>"Confirm email"</strong> (poi clicca su <em>Save</em>).<br>
-            Se hai già creato un utente e ricevi <em>"Email not confirmed"</em>, vai in <strong>Authentication → Users</strong>, clicca sui 3 puntini accanto alla tua utenza e seleziona <strong>"Confirm user"</strong>.
-          </div>
-
-          <details style="margin-top: 14px; font-size: 0.82rem; color: var(--text-muted);">
-            <summary style="cursor: pointer; font-weight: 600; color: #6366f1;">📋 Script SQL da eseguire su Supabase (1 Click)</summary>
-            <p style="margin: 6px 0;">Esegui questo script nel <strong>SQL Editor</strong> della tua dashboard Supabase:</p>
-            <pre style="background: var(--bg-primary); padding: 10px; border-radius: var(--radius-sm); margin-top: 6px; overflow-x: auto; font-size: 0.75rem; user-select: all;">
-create table if not exists tasks (
-  id text primary key,
-  user_id uuid references auth.users not null,
-  title text not null,
-  description text default '',
-  quadrant text not null,
-  completed boolean default false,
-  priority text not null,
-  due_date text,
-  tags jsonb default '[]'::jsonb,
-  order_idx integer default 0,
-  created_at timestamptz default now()
-);
-alter table tasks enable row level security;
-create policy "Users manage own tasks" on tasks for all using (auth.uid() = user_id);
-            </pre>
-          </details>
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" id="btn-supabase-disconnect" class="btn btn-secondary">Ripristina Backend Locale</button>
-          <button type="submit" class="btn btn-primary">Salva e Connetti Cloud</button>
-        </div>
-      </form>
-
     </div>
   </div>
 
@@ -479,6 +397,6 @@ create policy "Users manage own tasks" on tasks for all using (auth.uid() = user
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js?v=2.4"></script>
+  <script type="module" src="/js/app.js?v=2.5"></script>
 </body>
 </html>
