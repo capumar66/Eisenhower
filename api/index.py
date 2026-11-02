@@ -57,7 +57,7 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
         conn.close()
 
 def init_db():
-    """Inizializza le tabelle del database se non esistono."""
+    """Inizializza le tabelle del database se non esistono e gestisce migrazioni automatiche."""
     with get_db() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -66,9 +66,18 @@ def init_db():
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 display_name TEXT,
+                role TEXT NOT NULL DEFAULT 'utente',
                 created_at TEXT NOT NULL
             );
         """)
+        # Migrazione automatica se la colonna role non esiste ancora
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(users);")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "role" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'utente';")
+        # Assicura che l'utente 'admin' abbia ruolo 'admin' se presente
+        cursor.execute("UPDATE users SET role = 'admin' WHERE LOWER(username) = 'admin';")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
@@ -152,7 +161,16 @@ class UserResponse(BaseModel):
     id: str
     username: str
     display_name: Optional[str] = None
+    role: str = "utente"
     created_at: str
+
+class AdminUserItem(BaseModel):
+    id: str
+    username: str
+    display_name: Optional[str] = None
+    role: str = "utente"
+    created_at: str
+    task_count: int = 0
 
 class AuthResponse(BaseModel):
     token: str
@@ -217,34 +235,53 @@ app.add_middleware(
 async def vercel_path_normalizer(request: Request, call_next):
     """
     Normalizza il percorso su ambienti Vercel serverless.
-    Gestisce percorsi con prefisso file (/api/index.py/...), query parameters (?path=...)
+    Gestisce percorsi con prefisso file (/api/index.py/...), rewrites Vercel (x-matched-path, query parameters ?path=...)
     e varianti generate dai rewrites Vercel.
     """
     raw_path = request.scope.get("path", "")
 
-    # 1. Rimuove prefissi del file serverless se presenti
+    # 1. Controlla se Vercel ha popolato header di rewrite con il percorso originale
+    matched = (
+        request.headers.get("x-matched-path")
+        or request.headers.get("x-vercel-matched-path")
+        or request.headers.get("x-rewrite-url")
+        or request.headers.get("x-forwarded-uri")
+    )
+    if matched:
+        matched_clean = matched.split("?")[0]
+        if matched_clean and not matched_clean.endswith("index.py"):
+            raw_path = matched_clean
+
+    # 2. Se Vercel ha convertito il percorso in query param (es. ?path=auth/register o ?path=config)
+    param_path = request.query_params.get("path") or request.query_params.get("__route__")
+    if param_path:
+        param_clean = "/" + param_path.lstrip("/")
+        if not raw_path or raw_path in ("/api/index.py", "/api/index", "/index.py", "/"):
+            raw_path = param_clean
+
+    # 3. Rimuove prefissi del file serverless se ancora presenti
     for prefix in ("/api/index.py", "/api/index", "/index.py"):
         if raw_path.startswith(prefix):
-            raw_path = raw_path[len(prefix):]
+            remainder = raw_path[len(prefix):]
+            raw_path = remainder if remainder else "/"
             break
 
-    # 2. Se Vercel ha convertito il percorso in query param (es. ?path=auth/register)
-    if not raw_path or raw_path == "/":
-        param_path = request.query_params.get("path") or request.query_params.get("__route__")
-        if param_path:
-            raw_path = "/" + param_path.lstrip("/")
+    # 4. Assicura che inizi sempre con slash
+    if not raw_path.startswith("/"):
+        raw_path = "/" + raw_path
 
-    if raw_path:
-        request.scope["path"] = raw_path
+    request.scope["path"] = raw_path
 
     response = await call_next(request)
     
     # Headers no-cache per prevenire problemi di caching dei browser
     path = request.url.path
-    if path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/tasks/"):
+    if path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/tasks/") or path.startswith("/admin/") or path.startswith("/config"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     elif path.endswith((".html", ".js", ".css")) or path == "/":
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
+
+    return response
 
     return response
 
@@ -266,7 +303,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT u.id, u.username, u.display_name, u.created_at
+            SELECT u.id, u.username, u.display_name, u.role, u.created_at
             FROM sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.token = ?
@@ -283,6 +320,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
             id=row["id"],
             username=row["username"],
             display_name=row["display_name"],
+            role=row["role"] or "utente",
             created_at=row["created_at"]
         )
 
@@ -338,12 +376,16 @@ def register(payload: UserRegister):
                 detail="Nome utente già utilizzato. Scegline un altro."
             )
 
+        cursor.execute("SELECT COUNT(*) FROM users;")
+        total_users = cursor.fetchone()[0]
+        assigned_role = "admin" if (total_users == 0 or clean_username.lower() == "admin") else "utente"
+
         cursor.execute(
             """
-            INSERT INTO users (id, username, password_hash, salt, display_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, password_hash, salt, display_name, role, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, clean_username, pwd_hash, salt, display_name, now_iso)
+            (user_id, clean_username, pwd_hash, salt, display_name, assigned_role, now_iso)
         )
 
         token = secrets.token_urlsafe(32)
@@ -356,6 +398,7 @@ def register(payload: UserRegister):
         id=user_id,
         username=clean_username,
         display_name=display_name,
+        role=assigned_role,
         created_at=now_iso
     )
     return AuthResponse(token=token, user=user_res)
@@ -367,7 +410,7 @@ def login(payload: UserLogin):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, password_hash, salt, display_name, created_at FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, salt, display_name, role, created_at FROM users WHERE username = ?",
             (clean_username,)
         )
         row = cursor.fetchone()
@@ -389,6 +432,7 @@ def login(payload: UserLogin):
         id=user_id,
         username=row["username"],
         display_name=row["display_name"],
+        role=row["role"] or "utente",
         created_at=row["created_at"]
     )
     return AuthResponse(token=token, user=user_res)
@@ -418,11 +462,78 @@ def health_check():
 
 @api_router.get("/config")
 def get_public_config():
-    """Restituisce le configurazioni del client se impostate come variabili d'ambiente sul server."""
+    """Restituisce le configurazioni del client se impostate come variabili d'ambiente sul server (Vercel o locale)."""
+    supabase_url = (
+        os.environ.get("SUPABASE_URL")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        or os.environ.get("VITE_SUPABASE_URL")
+        or ""
+    ).strip()
+    supabase_anon_key = (
+        os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        or os.environ.get("VITE_SUPABASE_ANON_KEY")
+        or ""
+    ).strip()
     return {
-        "supabase_url": os.environ.get("SUPABASE_URL", "").strip(),
-        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", "").strip()
+        "supabase_url": supabase_url,
+        "supabase_anon_key": supabase_anon_key,
+        "configured": bool(supabase_url and supabase_anon_key)
     }
+
+# ---------------------------------------------------------------------------
+# API Endpoints Amministrazione (Riservati al ruolo 'admin')
+# ---------------------------------------------------------------------------
+
+@api_router.get("/admin/users", response_model=List[AdminUserItem])
+def get_all_users(current_user: UserResponse = Depends(get_current_user)):
+    """Restituisce l'elenco di tutti gli utenti registrati con relative metriche."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accesso negato: operazione riservata agli amministratori."
+        )
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.id, u.username, u.display_name, u.role, u.created_at,
+                   COUNT(t.id) as task_count
+            FROM users u
+            LEFT JOIN tasks t ON u.id = t.user_id
+            GROUP BY u.id
+            ORDER BY u.created_at ASC;
+        """)
+        return [
+            AdminUserItem(
+                id=r["id"],
+                username=r["username"],
+                display_name=r["display_name"],
+                role=r["role"] or "utente",
+                created_at=r["created_at"],
+                task_count=r["task_count"]
+            )
+            for r in cursor.fetchall()
+        ]
+
+@api_router.delete("/admin/users/{user_id}")
+def delete_user_by_admin(user_id: str, current_user: UserResponse = Depends(get_current_user)):
+    """Consente a un amministratore di eliminare un utente."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accesso negato: operazione riservata agli amministratori."
+        )
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Non puoi eliminare il tuo stesso account amministratore."
+        )
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Utente non trovato.")
+    return {"success": True, "message": "Utente eliminato con successo."}
 
 @api_router.get("/tasks", response_model=List[Task])
 def get_tasks(current_user: UserResponse = Depends(get_current_user)):

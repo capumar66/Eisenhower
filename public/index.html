@@ -84,9 +84,13 @@
         <!-- User Profile & Logout (visibile dopo login) -->
         <div id="user-section" class="user-section" style="display: none;">
           <div class="user-pill" id="user-profile-badge" title="Profilo utente">
-            <span class="user-avatar-icon">👤</span>
+            <span id="user-role-badge" class="role-badge role-utente">Utente</span>
             <span id="user-display-name" class="user-name">Utente</span>
           </div>
+          <!-- Pulsante Amministrazione (visibile solo per account Admin) -->
+          <button id="btn-open-admin" class="btn btn-secondary btn-sm" title="Pannello Amministrazione" style="display: none;">
+            <span>👑 Admin</span>
+          </button>
           <button id="btn-logout" class="btn btn-secondary btn-sm" title="Disconnettiti">
             <span>Esci 🚪</span>
           </button>
@@ -393,10 +397,78 @@
     </div>
   </div>
 
+  <!-- =========================================================================
+       Modal: Pannello Amministrazione (Riservato agli Admin)
+       ========================================================================= -->
+  <div id="admin-modal" class="modal-backdrop">
+    <div class="modal-window" style="max-width: 680px;">
+      
+      <div class="modal-header">
+        <h3 class="modal-title">👑 Pannello Amministrazione</h3>
+        <button id="admin-modal-close-btn" class="task-btn" style="font-size: 1.1rem;">✕</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <!-- Stato Sistema e Variabili Vercel -->
+        <div class="admin-system-card">
+          <div class="admin-system-header">
+            <h4>⚡ Stato Ambiente & Database</h4>
+            <span id="admin-db-badge" class="badge-status">Controllo in corso...</span>
+          </div>
+          <div class="admin-system-grid">
+            <div class="admin-info-item">
+              <span class="info-label">Variabili Vercel:</span>
+              <span id="admin-vercel-env-status" class="info-val">...</span>
+            </div>
+            <div class="admin-info-item">
+              <span class="info-label">Motore Database:</span>
+              <span id="admin-db-engine" class="info-val">...</span>
+            </div>
+          </div>
+          <div class="admin-help-box">
+            <p><strong>Configurazione Variabili su Vercel:</strong> In Vercel vai in <em>Project Settings → Environment Variables</em> e aggiungi <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code>. L'applicazione le caricherà automaticamente senza mostrare chiavi agli utenti.</p>
+          </div>
+        </div>
+
+        <!-- Gestione Utenti Registrati -->
+        <div class="admin-users-section">
+          <div class="section-title-row">
+            <h4>👥 Utenti Registrati nel Sistema</h4>
+            <button id="btn-admin-refresh-users" class="btn btn-secondary btn-sm" title="Aggiorna elenco">🔄 Aggiorna</button>
+          </div>
+          
+          <div class="table-container">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Utente</th>
+                  <th>Nome Visualizzato</th>
+                  <th>Ruolo</th>
+                  <th>Task</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-tbody">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Caricamento utenti...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="admin-modal-close-footer" class="btn btn-secondary">Chiudi</button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js?v=2.5"></script>
+  <script type="module" src="/js/app.js?v=2.6"></script>
 </body>
 </html>

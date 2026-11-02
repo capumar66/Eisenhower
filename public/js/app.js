@@ -51,7 +51,19 @@ class EisenhowerApp {
     this.btnOpenAuth = document.querySelector('#btn-open-auth');
     this.userSection = document.querySelector('#user-section');
     this.userDisplayName = document.querySelector('#user-display-name');
+    this.userRoleBadge = document.querySelector('#user-role-badge');
+    this.btnOpenAdmin = document.querySelector('#btn-open-admin');
     this.btnLogout = document.querySelector('#btn-logout');
+
+    // Admin Modal Elements
+    this.adminModal = document.querySelector('#admin-modal');
+    this.adminModalCloseBtn = document.querySelector('#admin-modal-close-btn');
+    this.adminModalCloseFooter = document.querySelector('#admin-modal-close-footer');
+    this.adminDbBadge = document.querySelector('#admin-db-badge');
+    this.adminVercelEnvStatus = document.querySelector('#admin-vercel-env-status');
+    this.adminDbEngine = document.querySelector('#admin-db-engine');
+    this.adminUsersTbody = document.querySelector('#admin-users-tbody');
+    this.btnAdminRefreshUsers = document.querySelector('#btn-admin-refresh-users');
 
     // Auth Modal Elements
     this.authModal = document.querySelector('#auth-modal');
@@ -191,12 +203,103 @@ class EisenhowerApp {
       if (this.userDisplayName) {
         this.userDisplayName.textContent = user.display_name || user.username;
       }
+      const isAdmin = user.role === 'admin';
+      if (this.userRoleBadge) {
+        this.userRoleBadge.textContent = isAdmin ? '👑 Admin' : '👤 Utente';
+        this.userRoleBadge.className = `role-badge ${isAdmin ? 'role-admin' : 'role-utente'}`;
+      }
+      if (this.btnOpenAdmin) {
+        this.btnOpenAdmin.style.display = isAdmin ? 'inline-flex' : 'none';
+      }
     } else {
       if (this.btnOpenAuth) this.btnOpenAuth.style.display = 'inline-flex';
       if (this.userSection) this.userSection.style.display = 'none';
       if (this.userDisplayName) {
         this.userDisplayName.textContent = '';
       }
+      if (this.btnOpenAdmin) {
+        this.btnOpenAdmin.style.display = 'none';
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Admin UI & Handlers
+  // -------------------------------------------------------------------------
+
+  openAdminModal() {
+    if (!this.adminModal) return;
+    this.adminModal.classList.add('is-open');
+    this.loadAdminData();
+  }
+
+  closeAdminModal() {
+    if (!this.adminModal) return;
+    this.adminModal.classList.remove('is-open');
+  }
+
+  async loadAdminData() {
+    const isSupabase = TaskStorage.hasSupabase();
+    if (this.adminDbBadge) {
+      this.adminDbBadge.textContent = isSupabase ? 'Supabase Cloud Attivo' : 'Backend Locale Python';
+      this.adminDbBadge.className = `badge-status ${isSupabase ? 'is-connected' : 'is-local'}`;
+    }
+    if (this.adminDbEngine) {
+      this.adminDbEngine.textContent = isSupabase ? 'PostgreSQL (Supabase Cloud)' : 'SQLite (/tmp o locale)';
+    }
+    if (this.adminVercelEnvStatus) {
+      this.adminVercelEnvStatus.innerHTML = isSupabase
+        ? '<span style="color: #34d399;">Configurate (SUPABASE_URL rilevato)</span>'
+        : '<span style="color: #f59e0b;">Non configurate (uso backend SQLite)</span>';
+    }
+
+    if (!this.adminUsersTbody) return;
+    this.adminUsersTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Caricamento utenti in corso...</td></tr>';
+
+    try {
+      const users = await TaskStorage.getAdminUsers();
+      if (!users || users.length === 0) {
+        this.adminUsersTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nessun utente trovato.</td></tr>';
+        return;
+      }
+
+      this.adminUsersTbody.innerHTML = '';
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        const isCurrent = this.currentUser && this.currentUser.id === u.id;
+        const roleClass = u.role === 'admin' ? 'role-admin' : 'role-utente';
+        const roleLabel = u.role === 'admin' ? '👑 Admin' : '👤 Utente';
+
+        tr.innerHTML = `
+          <td><strong>${u.username}</strong> ${isCurrent ? '<small style="color: #818cf8;">(Tu)</small>' : ''}</td>
+          <td>${u.display_name || '-'}</td>
+          <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
+          <td>${u.task_count ?? '-'}</td>
+          <td>
+            ${isCurrent ? '<span style="color: var(--text-muted); font-size: 0.72rem;">Attivo</span>' : `<button class="btn-del-user" data-uid="${u.id}" data-uname="${u.username}">Elimina</button>`}
+          </td>
+        `;
+        this.adminUsersTbody.appendChild(tr);
+      });
+
+      this.adminUsersTbody.querySelectorAll('.btn-del-user').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const uid = e.target.dataset.uid;
+          const uname = e.target.dataset.uname;
+          if (confirm(`Sei sicuro di voler eliminare l'utente "${uname}" e tutte le sue attività?`)) {
+            try {
+              await TaskStorage.deleteUser(uid);
+              this.showToast(`Utente "${uname}" eliminato.`);
+              this.loadAdminData();
+            } catch (err) {
+              alert('Errore: ' + err.message);
+            }
+          }
+        });
+      });
+
+    } catch (err) {
+      this.adminUsersTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #f87171;">${err.message || 'Errore caricamento utenti'}</td></tr>`;
     }
   }
 
@@ -206,6 +309,15 @@ class EisenhowerApp {
 
     // Open Auth Modal button
     this.btnOpenAuth?.addEventListener('click', () => this.openAuthModal());
+
+    // Admin Modal triggers
+    this.btnOpenAdmin?.addEventListener('click', () => this.openAdminModal());
+    this.adminModalCloseBtn?.addEventListener('click', () => this.closeAdminModal());
+    this.adminModalCloseFooter?.addEventListener('click', () => this.closeAdminModal());
+    this.btnAdminRefreshUsers?.addEventListener('click', () => this.loadAdminData());
+    this.adminModal?.addEventListener('click', (e) => {
+      if (e.target === this.adminModal) this.closeAdminModal();
+    });
 
     // Close Auth Modal
     this.authModalCloseBtn?.addEventListener('click', () => {
@@ -427,6 +539,10 @@ class EisenhowerApp {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if (this.adminModal?.classList.contains('is-open')) {
+          this.closeAdminModal();
+          return;
+        }
         if (this.modalBackdrop?.classList.contains('is-open')) {
           this.closeTaskModal();
           return;

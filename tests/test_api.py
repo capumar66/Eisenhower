@@ -224,3 +224,42 @@ def test_config_endpoint():
     data = res.json()
     assert "supabase_url" in data
     assert "supabase_anon_key" in data
+
+def test_two_level_roles_and_admin_panel():
+    """Verifica la gestione utenti a due livelli (Admin e Utente) e i relativi permessi."""
+    # 1. Primo utente registrato diventa automaticamente admin
+    res1 = client.post("/api/auth/register", json={
+        "username": "super_admin",
+        "password": "Password123!"
+    })
+    assert res1.status_code == 201
+    admin_token = res1.json()["token"]
+    assert res1.json()["user"]["role"] == "admin"
+
+    # 2. Secondo utente registrato ha ruolo utente standard
+    res2 = client.post("/api/auth/register", json={
+        "username": "utente_standard",
+        "password": "Password123!"
+    })
+    assert res2.status_code == 201
+    user_token = res2.json()["token"]
+    assert res2.json()["user"]["role"] == "utente"
+
+    # 3. Utente standard non può accedere a /api/admin/users (403 Forbidden)
+    res_forbidden = client.get("/api/admin/users", headers={"Authorization": f"Bearer {user_token}"})
+    assert res_forbidden.status_code == 403
+
+    # 4. Admin accede con successo e vede entrambi gli utenti
+    res_admin = client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res_admin.status_code == 200
+    users_list = res_admin.json()
+    assert len(users_list) == 2
+    roles = {u["username"]: u["role"] for u in users_list}
+    assert roles["super_admin"] == "admin"
+    assert roles["utente_standard"] == "utente"
+
+def test_vercel_x_matched_path_header():
+    """Verifica che il middleware normalizzi x-matched-path generato dai rewrites di Vercel."""
+    response = client.get("/api/index.py", headers={"x-matched-path": "/api/config"})
+    assert response.status_code == 200
+    assert "supabase_url" in response.json()

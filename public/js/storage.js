@@ -139,10 +139,12 @@ export const TaskStorage = {
         throw new Error(error.message || 'Credenziali non valide su Supabase.');
       }
 
+      const role = data.user.user_metadata?.role || (cleanUsername.toLowerCase() === 'admin' ? 'admin' : 'utente');
       const userObj = {
         id: data.user.id,
         username: data.user.user_metadata?.username || cleanUsername,
-        display_name: data.user.user_metadata?.display_name || cleanUsername
+        display_name: data.user.user_metadata?.display_name || cleanUsername,
+        role: role
       };
 
       this.setToken(data.session?.access_token || 'sb_active_session');
@@ -174,6 +176,7 @@ export const TaskStorage = {
     if (sb) {
       const cleanUsername = username.trim();
       const cleanName = (displayName || cleanUsername).trim();
+      const role = cleanUsername.toLowerCase() === 'admin' ? 'admin' : 'utente';
       const email = cleanUsername.includes('@') 
         ? cleanUsername 
         : `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
@@ -184,7 +187,8 @@ export const TaskStorage = {
         options: {
           data: {
             username: cleanUsername,
-            display_name: cleanName
+            display_name: cleanName,
+            role: role
           }
         }
       });
@@ -200,7 +204,8 @@ export const TaskStorage = {
       const userObj = {
         id: data.user.id,
         username: cleanUsername,
-        display_name: cleanName
+        display_name: cleanName,
+        role: role
       };
 
       // Se Supabase non richiede conferma email, la sessione è attiva subito
@@ -269,10 +274,13 @@ export const TaskStorage = {
       try {
         const { data } = await sb.auth.getSession();
         if (data?.session?.user) {
+          const role = data.session.user.user_metadata?.role ||
+            (data.session.user.user_metadata?.username?.toLowerCase() === 'admin' ? 'admin' : 'utente');
           const userObj = {
             id: data.session.user.id,
             username: data.session.user.user_metadata?.username || data.session.user.email.split('@')[0],
-            display_name: data.session.user.user_metadata?.display_name || data.session.user.email.split('@')[0]
+            display_name: data.session.user.user_metadata?.display_name || data.session.user.email.split('@')[0],
+            role: role
           };
           this.setUser(userObj);
           this.setToken(data.session.access_token);
@@ -602,6 +610,44 @@ export const TaskStorage = {
       reader.onerror = () => reject(new Error('Errore nella lettura del file'));
       reader.readAsText(file);
     });
+  },
+
+  /**
+   * --- Gestione Amministrazione (Ruolo Admin) ---
+   */
+  async getAdminUsers() {
+    const sb = getSupabase();
+    if (sb) {
+      const curr = this.getUser();
+      return [{
+        id: curr.id,
+        username: curr.username,
+        display_name: curr.display_name,
+        role: curr.role || 'admin',
+        created_at: new Date().toISOString(),
+        task_count: (this.getLocalTasks() || []).length
+      }];
+    }
+    const res = await fetch(`${API_BASE}/admin/users`, {
+      headers: this.getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Errore recupero utenti' }));
+      throw new Error(err.detail || 'Impossibile recuperare elenco utenti');
+    }
+    return await res.json();
+  },
+
+  async deleteUser(userId) {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Errore eliminazione utente' }));
+      throw new Error(err.detail || 'Impossibile eliminare utente');
+    }
+    return true;
   },
 
   /**
