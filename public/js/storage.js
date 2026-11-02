@@ -118,6 +118,9 @@ export const TaskStorage = {
       });
 
       if (error) {
+        if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
+          throw new Error('Email non confermata su Supabase. Disattiva "Confirm email" nella dashboard di Supabase (Authentication > Providers > Email) oppure conferma l\'utente da Authentication > Users.');
+        }
         throw new Error(error.message || 'Credenziali non valide su Supabase.');
       }
 
