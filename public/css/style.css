@@ -1141,3 +1141,37 @@ body {
   margin-bottom: 14px;
   line-height: 1.4;
 }
+
+.auth-cloud-hint {
+  margin-top: 18px;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  padding-top: 14px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 4px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link-btn:hover {
+  color: #a5b4fc;
+}
+
+.supabase-status-info {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  font-size: 0.82rem;
+  color: var(--text-main);
+}

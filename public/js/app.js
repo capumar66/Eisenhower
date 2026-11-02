@@ -74,6 +74,18 @@ class EisenhowerApp {
     this.quickAddForm = document.querySelector('#quick-add-form');
     this.quickInput = document.querySelector('#quick-input');
 
+    // Supabase Modal Elements
+    this.btnOpenSupabase = document.querySelector('#btn-open-supabase');
+    this.btnAuthOpenSupabase = document.querySelector('#btn-auth-open-supabase');
+    this.supabaseModal = document.querySelector('#supabase-modal');
+    this.supabaseModalCloseBtn = document.querySelector('#supabase-modal-close-btn');
+    this.supabaseConfigForm = document.querySelector('#supabase-config-form');
+    this.supabaseUrlInput = document.querySelector('#supabase-url');
+    this.supabaseAnonKeyInput = document.querySelector('#supabase-anon-key');
+    this.supabaseStatusText = document.querySelector('#supabase-status-text');
+    this.btnSupabaseDisconnect = document.querySelector('#btn-supabase-disconnect');
+    this.supabasePillIcon = document.querySelector('#supabase-pill-icon');
+
     // Task Modal
     this.modalBackdrop = document.querySelector('#task-modal');
     this.modalTitle = document.querySelector('#modal-title');
@@ -112,6 +124,7 @@ class EisenhowerApp {
   }
 
   async boot() {
+    this.updateSupabaseStatusUI();
     setupDragAndDrop(this.handleTaskMoved.bind(this));
 
     const user = await TaskStorage.checkAuthStatus();
@@ -136,6 +149,10 @@ class EisenhowerApp {
 
   openAuthModal() {
     if (!this.authModal) return;
+    // Se l'utente non è loggato, nascondi il pulsante di chiusura ✕
+    if (this.authModalCloseBtn) {
+      this.authModalCloseBtn.style.display = this.currentUser ? 'inline-flex' : 'none';
+    }
     this.setAuthTab('login');
     this.hideAuthError();
     this.authModal.classList.add('is-open');
@@ -144,8 +161,40 @@ class EisenhowerApp {
 
   closeAuthModal() {
     if (!this.authModal) return;
+    // CRITICO: Non consentire mai la chiusura della modale di autenticazione se l'utente non è loggato
+    if (!this.currentUser) return;
     this.authModal.classList.remove('is-open');
     this.hideAuthError();
+  }
+
+  // -------------------------------------------------------------------------
+  // Supabase Cloud Modal UI
+  // -------------------------------------------------------------------------
+
+  openSupabaseModal() {
+    if (!this.supabaseModal) return;
+    const cfg = TaskStorage.getSupabaseConfig();
+    if (this.supabaseUrlInput) this.supabaseUrlInput.value = cfg.url || '';
+    if (this.supabaseAnonKeyInput) this.supabaseAnonKeyInput.value = cfg.key || '';
+    this.updateSupabaseStatusUI();
+    this.supabaseModal.classList.add('is-open');
+  }
+
+  closeSupabaseModal() {
+    if (!this.supabaseModal) return;
+    this.supabaseModal.classList.remove('is-open');
+  }
+
+  updateSupabaseStatusUI() {
+    const isCloud = TaskStorage.hasSupabase();
+    if (this.supabaseStatusText) {
+      this.supabaseStatusText.innerHTML = isCloud
+        ? '<span style="color: #10b981; font-weight: 600;">● Connesso a Supabase Cloud</span>'
+        : '<span style="color: #6366f1; font-weight: 600;">● Locale (Backend Python)</span>';
+    }
+    if (this.supabasePillIcon) {
+      this.supabasePillIcon.textContent = isCloud ? '☁️' : '⚡';
+    }
   }
 
   setAuthTab(tab) {
@@ -201,14 +250,72 @@ class EisenhowerApp {
     this.btnOpenAuth?.addEventListener('click', () => this.openAuthModal());
 
     // Close Auth Modal
-    this.authModalCloseBtn?.addEventListener('click', () => this.closeAuthModal());
+    this.authModalCloseBtn?.addEventListener('click', () => {
+      if (this.currentUser) this.closeAuthModal();
+    });
     this.authModal?.addEventListener('click', (e) => {
-      if (e.target === this.authModal) this.closeAuthModal();
+      if (e.target === this.authModal) {
+        if (!this.currentUser) return; // Non chiudere se non autenticato
+        this.closeAuthModal();
+      }
+    });
+
+    // Supabase Cloud Modal
+    this.btnOpenSupabase?.addEventListener('click', () => this.openSupabaseModal());
+    this.btnAuthOpenSupabase?.addEventListener('click', () => this.openSupabaseModal());
+    this.supabaseModalCloseBtn?.addEventListener('click', () => this.closeSupabaseModal());
+    this.supabaseModal?.addEventListener('click', (e) => {
+      if (e.target === this.supabaseModal) this.closeSupabaseModal();
+    });
+
+    this.supabaseConfigForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = this.supabaseUrlInput?.value.trim();
+      const key = this.supabaseAnonKeyInput?.value.trim();
+      if (!url || !key) {
+        alert('Inserisci sia l\'URL che l\'Anon Key di Supabase.');
+        return;
+      }
+      TaskStorage.setSupabaseConfig(url, key);
+      this.updateSupabaseStatusUI();
+      this.closeSupabaseModal();
+      this.showToast('Configurazione Supabase salvata con successo!');
+      await this.boot();
+    });
+
+    this.btnSupabaseDisconnect?.addEventListener('click', async () => {
+      TaskStorage.clearSupabaseConfig();
+      if (this.supabaseUrlInput) this.supabaseUrlInput.value = '';
+      if (this.supabaseAnonKeyInput) this.supabaseAnonKeyInput.value = '';
+      this.updateSupabaseStatusUI();
+      this.closeSupabaseModal();
+      this.showToast('Ripristinato backend locale');
+      await this.boot();
     });
 
     // Auth Tabs
     this.tabLogin?.addEventListener('click', () => this.setAuthTab('login'));
     this.tabRegister?.addEventListener('click', () => this.setAuthTab('register'));
+
+    // Navigazione fluida tasto Invio nei campi di registrazione (previene submit accidentali)
+    this.registerUsername?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.registerName?.focus();
+      }
+    });
+    this.registerName?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.registerPassword?.focus();
+      }
+    });
+    this.registerPassword?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.registerPasswordConfirm?.focus();
+      }
+    });
 
     // Form Login Submit
     this.formLogin?.addEventListener('submit', async (e) => {
@@ -223,6 +330,13 @@ class EisenhowerApp {
         return;
       }
 
+      const submitBtn = this.formLogin.querySelector('button[type="submit"]');
+      const originalText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Accesso in corso...';
+      }
+
       try {
         const user = await TaskStorage.login(username, password);
         this.currentUser = user;
@@ -234,6 +348,11 @@ class EisenhowerApp {
         this.showToast(`Benvenuto, ${user.display_name || user.username}!`);
       } catch (err) {
         this.showAuthError(err.message || 'Errore durante il login.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
       }
     });
 
@@ -262,6 +381,13 @@ class EisenhowerApp {
         return;
       }
 
+      const submitBtn = this.formRegister.querySelector('button[type="submit"]');
+      const originalText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Registrazione in corso...';
+      }
+
       try {
         const user = await TaskStorage.register(username, password, displayName);
         this.currentUser = user;
@@ -273,6 +399,11 @@ class EisenhowerApp {
         this.showToast(`Account creato con successo! Benvenuto, ${user.display_name || user.username}!`);
       } catch (err) {
         this.showAuthError(err.message || 'Errore durante la registrazione.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
       }
     });
 
@@ -371,8 +502,18 @@ class EisenhowerApp {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (this.modalBackdrop.classList.contains('is-open')) {
+        if (this.supabaseModal?.classList.contains('is-open')) {
+          this.closeSupabaseModal();
+          return;
+        }
+        if (this.modalBackdrop?.classList.contains('is-open')) {
           this.closeTaskModal();
+          return;
+        }
+        if (this.authModal?.classList.contains('is-open')) {
+          if (this.currentUser) {
+            this.closeAuthModal();
+          }
         }
       }
     });
