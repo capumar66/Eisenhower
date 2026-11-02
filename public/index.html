@@ -67,6 +67,12 @@
           <span>Nuova Attività</span>
         </button>
 
+        <!-- Coda Attività Svolte / Completate (Archivio) -->
+        <button id="btn-open-archive" class="btn btn-secondary" title="Visualizza coda attività completate">
+          <span>📦 Completate</span>
+          <span id="count-archive-badge" class="badge-count">0</span>
+        </button>
+
         <!-- Esporta / Importa / Dati Demo -->
         <button id="btn-export" class="btn btn-secondary" title="Scarica backup JSON">
           <span>⬇️ Esporta</span>
@@ -398,6 +404,42 @@
   </div>
 
   <!-- =========================================================================
+       Modal: Coda Attività Svolte / Completate (Archivio Nascosto)
+       ========================================================================= -->
+  <div id="archive-modal" class="modal-backdrop">
+    <div class="modal-window" style="max-width: 600px;">
+      
+      <div class="modal-header">
+        <h3 class="modal-title">📦 Attività Svolte</h3>
+        <button id="archive-modal-close-btn" class="task-btn" style="font-size: 1.1rem;">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="archive-header-info">
+          <p id="archive-count-text" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Elenco delle attività completate archiviate fuori dalla matrice.
+          </p>
+        </div>
+
+        <div id="archive-tasks-container" class="archive-tasks-list">
+          <!-- Card completate caricate dinamicamente -->
+        </div>
+
+        <div id="archive-empty-placeholder" class="archive-empty" style="display: none;">
+          <div style="font-size: 2.2rem; opacity: 0.5; margin-bottom: 8px;">🎉</div>
+          <p style="font-weight: 600; font-size: 0.95rem;">Nessuna attività archiviata</p>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Le attività che spunti come completate nella matrice verranno spostate automaticamente qui.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="archive-modal-close-footer" class="btn btn-secondary">Chiudi</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================================
        Modal: Pannello Amministrazione (Riservato agli Admin)
        ========================================================================= -->
   <div id="admin-modal" class="modal-backdrop">
@@ -469,6 +511,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js?v=2.7"></script>
+  <script type="module" src="/js/app.js?v=2.8"></script>
 </body>
 </html>

@@ -263,3 +263,24 @@ def test_vercel_x_matched_path_header():
     response = client.get("/api/index.py", headers={"x-matched-path": "/api/config"})
     assert response.status_code == 200
     assert "supabase_url" in response.json()
+
+def test_task_completed_status_toggle():
+    """Verifica che lo stato completed delle attività venga aggiornato correttamente via API."""
+    reg = client.post("/api/auth/register", json={"username": "user_archive", "password": "Password123!"})
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Crea attività
+    created = client.post("/api/tasks", headers=headers, json={"title": "Attività da archiviare", "quadrant": "q1"})
+    task_id = created.json()["id"]
+    assert created.json()["completed"] is False
+
+    # Completa (sposta in archivio)
+    updated = client.put(f"/api/tasks/{task_id}", headers=headers, json={"completed": True})
+    assert updated.status_code == 200
+    assert updated.json()["completed"] is True
+
+    # Ripristina (deseleziona completed)
+    restored = client.put(f"/api/tasks/{task_id}", headers=headers, json={"completed": False})
+    assert restored.status_code == 200
+    assert restored.json()["completed"] is False

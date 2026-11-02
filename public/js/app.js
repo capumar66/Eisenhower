@@ -42,10 +42,20 @@ class EisenhowerApp {
 
     // Header Actions & Buttons
     this.btnNewTask = document.querySelector('#btn-new-task');
+    this.btnOpenArchive = document.querySelector('#btn-open-archive');
+    this.countArchiveBadge = document.querySelector('#count-archive-badge');
     this.btnExport = document.querySelector('#btn-export');
     this.btnImport = document.querySelector('#btn-import');
     this.fileInput = document.querySelector('#file-import-input');
     this.btnThemeToggle = document.querySelector('#btn-theme-toggle');
+
+    // Archive Modal Elements
+    this.archiveModal = document.querySelector('#archive-modal');
+    this.archiveModalCloseBtn = document.querySelector('#archive-modal-close-btn');
+    this.archiveModalCloseFooter = document.querySelector('#archive-modal-close-footer');
+    this.archiveCountText = document.querySelector('#archive-count-text');
+    this.archiveTasksContainer = document.querySelector('#archive-tasks-container');
+    this.archiveEmptyPlaceholder = document.querySelector('#archive-empty-placeholder');
 
     // User Profile & Logout Elements
     this.btnOpenAuth = document.querySelector('#btn-open-auth');
@@ -314,6 +324,14 @@ class EisenhowerApp {
     // Open Auth Modal button
     this.btnOpenAuth?.addEventListener('click', () => this.openAuthModal());
 
+    // Archive Modal triggers
+    this.btnOpenArchive?.addEventListener('click', () => this.openArchiveModal());
+    this.archiveModalCloseBtn?.addEventListener('click', () => this.closeArchiveModal());
+    this.archiveModalCloseFooter?.addEventListener('click', () => this.closeArchiveModal());
+    this.archiveModal?.addEventListener('click', (e) => {
+      if (e.target === this.archiveModal) this.closeArchiveModal();
+    });
+
     // Admin Modal triggers
     this.btnOpenAdmin?.addEventListener('click', () => this.openAdminModal());
     this.adminModalCloseBtn?.addEventListener('click', () => this.closeAdminModal());
@@ -543,6 +561,10 @@ class EisenhowerApp {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if (this.archiveModal?.classList.contains('is-open')) {
+          this.closeArchiveModal();
+          return;
+        }
         if (this.adminModal?.classList.contains('is-open')) {
           this.closeAdminModal();
           return;
@@ -611,7 +633,10 @@ class EisenhowerApp {
       container.innerHTML = '';
     });
 
-    const filtered = this.tasks.filter(t => {
+    // Mostra solo le attività attive nella matrice (le svolte vanno nella coda nascosta)
+    const activeTasks = this.tasks.filter(t => !t.completed);
+
+    const filtered = activeTasks.filter(t => {
       if (!this.filterText) return true;
       const titleMatch = t.title.toLowerCase().includes(this.filterText);
       const descMatch = (t.description || '').toLowerCase().includes(this.filterText);
@@ -650,13 +675,18 @@ class EisenhowerApp {
     checkbox.type = 'checkbox';
     checkbox.className = 'task-checkbox';
     checkbox.checked = task.completed;
-    checkbox.title = 'Segna come completata';
+    checkbox.title = 'Segna come completata (sposta in archivio)';
     checkbox.addEventListener('change', async (e) => {
       e.stopPropagation();
-      task.completed = checkbox.checked;
-      card.classList.toggle('is-completed', task.completed);
-      await TaskStorage.updateTask(task.id, { completed: task.completed });
-      this.updateStats();
+      if (checkbox.checked) {
+        card.classList.add('is-completing');
+        setTimeout(async () => {
+          task.completed = true;
+          await TaskStorage.updateTask(task.id, { completed: true });
+          this.render();
+          this.showToast('Attività svolta e archiviata! 📦');
+        }, 220);
+      }
     });
 
     const titleEl = document.createElement('span');
@@ -763,9 +793,9 @@ class EisenhowerApp {
       this.statFill.style.width = `${percent}%`;
     }
 
-    // Aggiorna badge contatori
+    // Aggiorna badge contatori sui quadranti (solo attività attive)
     const counts = { inbox: 0, q1: 0, q2: 0, q3: 0, q4: 0 };
-    this.tasks.forEach(t => {
+    this.tasks.filter(t => !t.completed).forEach(t => {
       if (counts[t.quadrant] !== undefined) counts[t.quadrant]++;
     });
 
@@ -774,6 +804,132 @@ class EisenhowerApp {
     if (this.countQ2) this.countQ2.textContent = counts.q2;
     if (this.countQ3) this.countQ3.textContent = counts.q3;
     if (this.countQ4) this.countQ4.textContent = counts.q4;
+
+    this.updateArchiveBadge();
+  }
+
+  updateArchiveBadge() {
+    const completedCount = this.tasks.filter(t => t.completed).length;
+    if (this.countArchiveBadge) {
+      this.countArchiveBadge.textContent = completedCount;
+      this.countArchiveBadge.classList.toggle('has-items', completedCount > 0);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Archive Modal (Coda Attività Svolte)
+  // -------------------------------------------------------------------------
+
+  openArchiveModal() {
+    if (!this.archiveModal) return;
+    this.renderArchiveList();
+    this.archiveModal.classList.add('is-open');
+  }
+
+  closeArchiveModal() {
+    if (!this.archiveModal) return;
+    this.archiveModal.classList.remove('is-open');
+  }
+
+  renderArchiveList() {
+    if (!this.archiveTasksContainer || !this.archiveEmptyPlaceholder) return;
+
+    const completedTasks = this.tasks.filter(t => t.completed);
+    const count = completedTasks.length;
+
+    if (this.archiveCountText) {
+      this.archiveCountText.textContent = count === 0
+        ? 'Nessuna attività completata presente.'
+        : `${count} ${count === 1 ? 'attività completata archiviata' : 'attività completate archiviate'}`;
+    }
+
+    if (count === 0) {
+      this.archiveTasksContainer.style.display = 'none';
+      this.archiveEmptyPlaceholder.style.display = 'flex';
+      return;
+    }
+
+    this.archiveEmptyPlaceholder.style.display = 'none';
+    this.archiveTasksContainer.style.display = 'flex';
+    this.archiveTasksContainer.innerHTML = '';
+
+    const quadrantLabels = {
+      inbox: 'Inbox',
+      q1: 'Q1 (Fai Subito)',
+      q2: 'Q2 (Pianifica)',
+      q3: 'Q3 (Delega)',
+      q4: 'Q4 (Elimina)'
+    };
+
+    completedTasks.forEach(task => {
+      const item = document.createElement('div');
+      item.className = 'archive-task-item';
+      item.dataset.taskId = task.id;
+
+      const info = document.createElement('div');
+      info.className = 'archive-task-info';
+
+      const header = document.createElement('div');
+      header.className = 'archive-task-header';
+
+      const quadSpan = document.createElement('span');
+      quadSpan.className = `archive-task-quadrant quadrant-${task.quadrant}`;
+      quadSpan.textContent = quadrantLabels[task.quadrant] || task.quadrant;
+      header.appendChild(quadSpan);
+
+      if (task.due_date) {
+        const dueSpan = document.createElement('span');
+        dueSpan.className = 'task-due';
+        dueSpan.style.fontSize = '0.7rem';
+        dueSpan.textContent = `📅 ${task.due_date}`;
+        header.appendChild(dueSpan);
+      }
+
+      const title = document.createElement('div');
+      title.className = 'archive-task-title';
+      title.textContent = task.title;
+
+      info.appendChild(header);
+      info.appendChild(title);
+
+      const actions = document.createElement('div');
+      actions.className = 'archive-task-actions';
+
+      // Pulsante Ripristina
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'btn-restore-task';
+      restoreBtn.title = 'Riporta questa attività nella matrice';
+      restoreBtn.innerHTML = '<span>↩️</span><span>Ripristina</span>';
+      restoreBtn.addEventListener('click', async () => {
+        task.completed = false;
+        await TaskStorage.updateTask(task.id, { completed: false });
+        this.render();
+        this.renderArchiveList();
+        this.showToast(`"${task.title}" ripristinata nella matrice!`);
+      });
+
+      // Pulsante Elimina
+      const delBtn = document.createElement('button');
+      delBtn.className = 'task-btn task-btn-del';
+      delBtn.title = 'Elimina definitivamente';
+      delBtn.innerHTML = '🗑️';
+      delBtn.addEventListener('click', async () => {
+        if (confirm(`Eliminare definitivamente l'attività "${task.title}" dall'archivio?`)) {
+          await TaskStorage.deleteTask(task.id);
+          this.tasks = this.tasks.filter(t => t.id !== task.id);
+          this.render();
+          this.renderArchiveList();
+          this.showToast('Attività eliminata definitivamente.');
+        }
+      });
+
+      actions.appendChild(restoreBtn);
+      actions.appendChild(delBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
+      this.archiveTasksContainer.appendChild(item);
+    });
   }
 
   // -------------------------------------------------------------------------
