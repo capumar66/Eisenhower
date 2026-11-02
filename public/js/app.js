@@ -240,17 +240,21 @@ class EisenhowerApp {
 
   async loadAdminData() {
     const isSupabase = TaskStorage.hasSupabase();
+    const cfgStatus = TaskStorage.getServerConfigStatus();
+
     if (this.adminDbBadge) {
-      this.adminDbBadge.textContent = isSupabase ? 'Supabase Cloud Attivo' : 'Backend Locale Python';
+      this.adminDbBadge.textContent = isSupabase ? '⚡ Supabase Cloud Attivo' : '💻 Backend Locale Python';
       this.adminDbBadge.className = `badge-status ${isSupabase ? 'is-connected' : 'is-local'}`;
     }
     if (this.adminDbEngine) {
       this.adminDbEngine.textContent = isSupabase ? 'PostgreSQL (Supabase Cloud)' : 'SQLite (/tmp o locale)';
     }
     if (this.adminVercelEnvStatus) {
-      this.adminVercelEnvStatus.innerHTML = isSupabase
-        ? '<span style="color: #34d399;">Configurate (SUPABASE_URL rilevato)</span>'
-        : '<span style="color: #f59e0b;">Non configurate (uso backend SQLite)</span>';
+      if (cfgStatus.isConfigured) {
+        this.adminVercelEnvStatus.innerHTML = `<span style="color: #34d399; font-weight: 600;">✅ ${cfgStatus.source} (${cfgStatus.urlPreview})</span>`;
+      } else {
+        this.adminVercelEnvStatus.innerHTML = `<span style="color: #f87171; font-weight: 600;">❌ Non rilevate (Verifica Vercel Settings e fai Redeploy)</span>`;
+      }
     }
 
     if (!this.adminUsersTbody) return;

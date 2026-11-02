@@ -15,6 +15,17 @@ let serverConfigLoaded = false;
 let envSupabaseUrl = null;
 let envSupabaseKey = null;
 
+async function waitForSupabaseSdk(timeoutMs = 3000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+      return true;
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return false;
+}
+
 function getSupabase() {
   if (supabaseClient) return supabaseClient;
   try {
@@ -37,12 +48,12 @@ export const TaskStorage = {
   async initSupabase() {
     if (!serverConfigLoaded) {
       try {
-        const res = await fetch(`${API_BASE}/config`);
+        const res = await fetch(`${API_BASE}/config?_t=${Date.now()}`);
         if (res.ok) {
           const cfg = await res.json();
-          if (cfg.supabase_url && cfg.supabase_anon_key) {
-            envSupabaseUrl = cfg.supabase_url;
-            envSupabaseKey = cfg.supabase_anon_key;
+          if (cfg && cfg.supabase_url && cfg.supabase_anon_key) {
+            envSupabaseUrl = cfg.supabase_url.trim();
+            envSupabaseKey = cfg.supabase_anon_key.trim();
           }
         }
       } catch (e) {
@@ -50,7 +61,20 @@ export const TaskStorage = {
       }
       serverConfigLoaded = true;
     }
+    await waitForSupabaseSdk();
     return getSupabase();
+  },
+
+  getServerConfigStatus() {
+    const url = envSupabaseUrl || localStorage.getItem(SUPABASE_URL_KEY);
+    const key = envSupabaseKey || localStorage.getItem(SUPABASE_ANON_KEY);
+    return {
+      hasUrl: Boolean(url),
+      hasKey: Boolean(key),
+      isConfigured: Boolean(url && key),
+      source: envSupabaseUrl ? 'Variabili d\'Ambiente Vercel' : (localStorage.getItem(SUPABASE_URL_KEY) ? 'Manuale Admin (LocalStorage)' : 'Nessuna'),
+      urlPreview: url ? (url.length > 35 ? url.substring(0, 32) + '...' : url) : 'Non impostato'
+    };
   },
 
   hasSupabase() {

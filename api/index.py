@@ -734,8 +734,9 @@ app.include_router(api_router, prefix="/api")
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------
-# Montaggio StaticFiles per ambiente locale / standalone
+# Montaggio StaticFiles per ambiente locale / standalone (escluso su Vercel CDN)
 # ---------------------------------------------------------------------------
-public_path = Path(__file__).resolve().parent.parent / "public"
-if public_path.is_dir():
-    app.mount("/", StaticFiles(directory=str(public_path), html=True), name="static")
+if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    public_path = Path(__file__).resolve().parent.parent / "public"
+    if public_path.is_dir():
+        app.mount("/", StaticFiles(directory=str(public_path), html=True), name="static")
