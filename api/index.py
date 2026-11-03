@@ -159,12 +159,14 @@ class PriorityType(str, Enum):
     HIGH = "high"
 
 class UserRegister(BaseModel):
+    id: Optional[str] = None
     username: str = Field(..., min_length=3, max_length=30)
     email: Optional[str] = Field(default=None, max_length=100)
     password: str = Field(..., min_length=6, max_length=100)
     display_name: Optional[str] = Field(default="", max_length=50)
 
 class AdminUserCreate(BaseModel):
+    id: Optional[str] = None
     username: str = Field(..., min_length=3, max_length=30)
     email: str = Field(..., min_length=5, max_length=100)
     password: str = Field(..., min_length=6, max_length=100)
@@ -472,7 +474,7 @@ def register(payload: UserRegister):
             detail="Indirizzo email non valido."
         )
 
-    user_id = str(uuid.uuid4())
+    user_id = payload.id.strip() if getattr(payload, "id", None) and payload.id and payload.id.strip() else str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
     pwd_hash, salt = hash_password(payload.password)
     display_name = payload.display_name.strip() if payload.display_name else clean_username
@@ -567,6 +569,18 @@ def login(payload: UserLogin):
         created_at=row["created_at"]
     )
     return AuthResponse(token=token, user=user_res)
+
+@api_router.get("/auth/resolve-email")
+def resolve_email(username: str):
+    """Risolve l'indirizzo email a partire dallo username per agevolare il login universale."""
+    clean_username = username.strip().lower()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT email FROM users WHERE LOWER(username) = ? AND email IS NOT NULL", (clean_username,))
+        row = cursor.fetchone()
+        if row and row["email"]:
+            return {"email": row["email"]}
+    return {"email": None}
 
 @api_router.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):
@@ -712,7 +726,7 @@ def create_user_by_admin(payload: AdminUserCreate, current_user: UserResponse = 
             detail="Indirizzo email non valido."
         )
 
-    user_id = str(uuid.uuid4())
+    user_id = payload.id.strip() if getattr(payload, "id", None) and payload.id and payload.id.strip() else str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
     pwd_hash, salt = hash_password(payload.password)
 

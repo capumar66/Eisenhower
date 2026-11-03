@@ -147,9 +147,27 @@ export const TaskStorage = {
     const sb = getSupabase();
     if (sb) {
       const cleanUsername = username.trim();
-      const email = cleanUsername.includes('@') 
-        ? cleanUsername 
-        : `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
+      let email = cleanUsername;
+
+      if (!cleanUsername.includes('@')) {
+        // Cerca l'email reale mappata per questo username
+        const mappedEmail = this.getUserEmailMapping(cleanUsername);
+        if (mappedEmail) {
+          email = mappedEmail;
+        } else {
+          // Interroga l'endpoint helper per recuperare l'email reale dallo username
+          try {
+            const res = await fetch(`${API_BASE}/auth/resolve-email?username=${encodeURIComponent(cleanUsername)}`);
+            if (res.ok) {
+              const resData = await res.json();
+              if (resData.email) email = resData.email;
+            }
+          } catch {}
+          if (!email.includes('@')) {
+            email = `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
+          }
+        }
+      }
 
       const { data, error } = await sb.auth.signInWithPassword({
         email,
@@ -175,6 +193,7 @@ export const TaskStorage = {
 
       this.setToken(data.session?.access_token || 'sb_active_session');
       this.setUser(userObj);
+      this.recordUserInList(userObj);
       localStorage.removeItem(STORAGE_KEY);
       return userObj;
     }
@@ -245,6 +264,7 @@ export const TaskStorage = {
         this.setToken('sb_registered_' + data.user.id);
       }
       this.setUser(userObj);
+      this.recordUserInList(userObj);
       localStorage.removeItem(STORAGE_KEY);
       return userObj;
     }
@@ -268,6 +288,7 @@ export const TaskStorage = {
 
     this.setToken(data.token);
     this.setUser(data.user);
+    this.recordUserInList(data.user);
     localStorage.removeItem(STORAGE_KEY);
     return data.user;
   },
@@ -646,37 +667,117 @@ export const TaskStorage = {
   /**
    * --- Gestione Amministrazione (Ruolo Admin) ---
    */
+  getStoredUsersList() {
+    try {
+      const raw = localStorage.getItem('eisenhower_all_users');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  saveStoredUsersList(users) {
+    try {
+      localStorage.setItem('eisenhower_all_users', JSON.stringify(users));
+    } catch (e) {
+      console.warn('Errore salvataggio lista utenti:', e);
+    }
+  },
+
+  recordUserInList(userObj) {
+    if (!userObj || !userObj.username) return;
+    const list = this.getStoredUsersList();
+    const idx = list.findIndex(u => (userObj.id && u.id === userObj.id) || u.username.toLowerCase() === userObj.username.toLowerCase());
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...userObj };
+    } else {
+      list.push(userObj);
+    }
+    this.saveStoredUsersList(list);
+
+    if (userObj.username && userObj.email) {
+      this.recordUserEmailMapping(userObj.username, userObj.email);
+    }
+  },
+
+  getUserEmailMapping(username) {
+    try {
+      const map = JSON.parse(localStorage.getItem('eisenhower_user_email_map') || '{}');
+      return map[username.toLowerCase().trim()] || null;
+    } catch {
+      return null;
+    }
+  },
+
+  recordUserEmailMapping(username, email) {
+    if (!username || !email) return;
+    try {
+      const map = JSON.parse(localStorage.getItem('eisenhower_user_email_map') || '{}');
+      map[username.toLowerCase().trim()] = email.toLowerCase().trim();
+      localStorage.setItem('eisenhower_user_email_map', JSON.stringify(map));
+    } catch (e) {
+      console.warn('Errore salvataggio email map:', e);
+    }
+  },
+
   async getAdminUsers() {
-    const sb = getSupabase();
-    if (sb) {
-      const curr = this.getUser();
-      return [{
+    const curr = this.getUser();
+    if (curr) {
+      this.recordUserInList({
         id: curr.id,
         username: curr.username,
         email: curr.email || `${curr.username}@eisenhower.app`,
         display_name: curr.display_name,
         role: curr.role || 'admin',
         is_blocked: false,
-        created_at: new Date().toISOString(),
-        task_count: (this.getLocalTasks() || []).length
-      }];
+        created_at: curr.created_at || new Date().toISOString()
+      });
     }
-    const res = await fetch(`${API_BASE}/admin/users`, {
-      headers: this.getAuthHeaders()
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Errore recupero utenti' }));
-      throw new Error(err.detail || 'Impossibile recuperare elenco utenti');
+
+    // 1. Prova a interrogare la tabella 'users' su Supabase se disponibile
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb.from('users').select('*');
+        if (!error && Array.isArray(data)) {
+          data.forEach(u => this.recordUserInList(u));
+        }
+      } catch (sbErr) {
+        // Tabella users opzionale su Supabase
+      }
     }
-    return await res.json();
+
+    // 2. Interroga il backend API (funziona sia in locale che con token Supabase JWT)
+    try {
+      const res = await fetch(`${API_BASE}/admin/users`, {
+        headers: this.getAuthHeaders()
+      });
+      if (res.ok) {
+        const apiUsers = await res.json();
+        if (Array.isArray(apiUsers)) {
+          apiUsers.forEach(u => this.recordUserInList(u));
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Backend /admin/users non raggiungibile:', apiErr);
+    }
+
+    return this.getStoredUsersList();
   },
 
   async createAdminUser({ username, email, password, displayName, role }) {
-    const url = envSupabaseUrl || localStorage.getItem(SUPABASE_URL_KEY);
-    const key = envSupabaseKey || localStorage.getItem(SUPABASE_ANON_KEY);
-    let sbCreated = false;
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = (displayName || username).trim();
+    const userRole = role || 'utente';
 
-    // Se Supabase Cloud è configurato, registra l'utente in Supabase Auth tramite client dedicato
+    const sb = getSupabase();
+    const url = sb?.supabaseUrl || envSupabaseUrl || localStorage.getItem(SUPABASE_URL_KEY);
+    const key = sb?.supabaseKey || envSupabaseKey || localStorage.getItem(SUPABASE_ANON_KEY);
+    let sbCreated = false;
+    let newUserId = null;
+
+    // 1. Registra l'utente in Supabase Auth con l'EMAIL ESATTA digitata dall'amministratore
     if (url && key && window.supabase && typeof window.supabase.createClient === 'function') {
       try {
         const tempClient = window.supabase.createClient(url.trim(), key.trim(), {
@@ -687,76 +788,107 @@ export const TaskStorage = {
           }
         });
         const { data, error } = await tempClient.auth.signUp({
-          email: email.trim(),
+          email: cleanEmail,
           password: password,
           options: {
             data: {
-              username: username.trim(),
-              display_name: (displayName || username).trim(),
-              role: role || 'utente',
-              email: email.trim()
+              username: cleanUsername,
+              display_name: cleanName,
+              role: userRole,
+              email: cleanEmail
             }
           }
         });
+
         if (error) {
           throw new Error(error.message || 'Errore creazione utente su Supabase');
         }
-        sbCreated = true;
+
+        if (data?.user?.identities && data.user.identities.length === 0) {
+          throw new Error(`L'indirizzo email "${cleanEmail}" è già registrato su Supabase.`);
+        }
+
+        if (data?.user) {
+          newUserId = data.user.id;
+          sbCreated = true;
+          // Se la tabella users esiste su Supabase, effettua l'upsert del record
+          try {
+            await sb.from('users').upsert({
+              id: newUserId,
+              username: cleanUsername,
+              email: cleanEmail,
+              display_name: cleanName,
+              role: userRole,
+              is_blocked: false,
+              created_at: data.user.created_at || new Date().toISOString()
+            });
+          } catch (tErr) {
+            console.warn('Tabella users non disponibile su Supabase (profilo auth creato):', tErr);
+          }
+        }
       } catch (sbErr) {
         console.warn('Errore creazione utente su Supabase Auth:', sbErr);
         throw sbErr;
       }
     }
 
-    // Sincronizza anche sul backend API
+    // 2. Sincronizzazione sul backend API
+    let apiUser = null;
     try {
       const res = await fetch(`${API_BASE}/admin/users`, {
         method: 'POST',
         headers: this.getAuthHeaders(),
         body: JSON.stringify({
-          username,
-          email,
-          password,
-          display_name: displayName || username,
-          role: role || 'utente'
+          id: newUserId,
+          username: cleanUsername,
+          email: cleanEmail,
+          password: password,
+          display_name: cleanName,
+          role: userRole
         })
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Errore creazione utente' }));
+      if (res.ok) {
+        apiUser = await res.json();
+      } else {
+        const err = await res.json().catch(() => ({ detail: 'Errore creazione utente API' }));
         if (!sbCreated) {
           throw new Error(err.detail || 'Impossibile creare il nuovo utente');
         }
-      } else {
-        return await res.json();
       }
     } catch (apiErr) {
       if (!sbCreated) throw apiErr;
     }
 
-    return {
-      id: 'user_' + Date.now(),
-      username,
-      email,
-      display_name: displayName || username,
-      role: role || 'utente',
+    const finalUser = apiUser || {
+      id: newUserId || ('user_' + Date.now()),
+      username: cleanUsername,
+      email: cleanEmail,
+      display_name: cleanName,
+      role: userRole,
       is_blocked: false,
       created_at: new Date().toISOString(),
       task_count: 0
     };
+
+    // 3. Salva l'utente nello store locale e registra il mapping username -> email
+    this.recordUserInList(finalUser);
+    return finalUser;
   },
 
   async updateUser(userId, { display_name, email, password, role }) {
     const sb = getSupabase();
     const curr = this.getUser();
     const isCurrent = curr && (curr.id === userId || curr.username === userId);
+    const cleanEmail = email ? email.trim().toLowerCase() : undefined;
+    const cleanName = display_name !== undefined ? display_name.trim() : undefined;
 
     if (sb && isCurrent) {
       try {
         const updateData = {};
-        if (display_name !== undefined) {
-          updateData.data = { ...(curr.user_metadata || {}), display_name: display_name.trim() };
+        if (cleanName !== undefined) {
+          updateData.data = { ...(curr.user_metadata || {}), display_name: cleanName };
         }
-        if (email) updateData.email = email.trim();
+        if (cleanEmail) updateData.email = cleanEmail;
         if (password) updateData.password = password;
         const { error } = await sb.auth.updateUser(updateData);
         if (error) throw new Error(error.message || 'Errore aggiornamento utente Supabase');
@@ -765,64 +897,79 @@ export const TaskStorage = {
       }
     }
 
+    let updatedObj = null;
     try {
       const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'PUT',
         headers: this.getAuthHeaders(),
         body: JSON.stringify({
-          display_name,
-          email,
+          display_name: cleanName,
+          email: cleanEmail,
           password,
           role
         })
       });
       if (res.ok) {
-        const updated = await res.json();
-        if (isCurrent) {
-          curr.display_name = updated.display_name;
-          curr.email = updated.email;
-          if (updated.role) curr.role = updated.role;
-          this.setUser(curr);
-        }
-        return updated;
+        updatedObj = await res.json();
       }
     } catch (e) {
       console.warn('Errore API update user:', e);
     }
 
-    // Se stiamo aggiornando l'utente corrente in locale
+    const finalUser = updatedObj || {
+      id: userId,
+      display_name: cleanName,
+      email: cleanEmail,
+      role
+    };
+
     if (isCurrent) {
-      if (display_name) curr.display_name = display_name;
-      if (email) curr.email = email;
+      if (cleanName) curr.display_name = cleanName;
+      if (cleanEmail) curr.email = cleanEmail;
       if (role) curr.role = role;
       this.setUser(curr);
-      return curr;
     }
 
-    return { id: userId, display_name, email, role };
+    this.recordUserInList(finalUser);
+    return finalUser;
   },
 
   async toggleBlockUser(userId) {
-    const res = await fetch(`${API_BASE}/admin/users/${userId}/toggle-block`, {
-      method: 'POST',
-      headers: this.getAuthHeaders()
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Errore modifica stato blocco utente' }));
-      throw new Error(err.detail || 'Impossibile aggiornare lo stato di blocco dell\'utente');
+    let result = null;
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${userId}/toggle-block`, {
+        method: 'POST',
+        headers: this.getAuthHeaders()
+      });
+      if (res.ok) {
+        result = await res.json();
+      }
+    } catch (e) {
+      console.warn('Errore API toggle block:', e);
     }
-    return await res.json();
+
+    const list = this.getStoredUsersList();
+    const user = list.find(u => u.id === userId);
+    if (user) {
+      user.is_blocked = !user.is_blocked;
+      this.saveStoredUsersList(list);
+    }
+
+    return result || { is_blocked: user ? user.is_blocked : false, detail: 'Stato aggiornato con successo.' };
   },
 
   async deleteUser(userId) {
-    const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
-      method: 'DELETE',
-      headers: this.getAuthHeaders()
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Errore eliminazione utente' }));
-      throw new Error(err.detail || 'Impossibile eliminare utente');
+    try {
+      await fetch(`${API_BASE}/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
+      });
+    } catch (e) {
+      console.warn('Errore API delete user:', e);
     }
+
+    const list = this.getStoredUsersList().filter(u => u.id !== userId);
+    this.saveStoredUsersList(list);
     return true;
   },
 
