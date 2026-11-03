@@ -83,8 +83,8 @@ def init_db():
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;")
         if "is_blocked" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0;")
-        # Assicura che l'utente 'admin' abbia ruolo 'admin' se presente
-        cursor.execute("UPDATE users SET role = 'admin' WHERE LOWER(username) = 'admin';")
+        # Assicura che gli utenti 'admin' e 'marco' abbiano ruolo 'admin' se presenti
+        cursor.execute("UPDATE users SET role = 'admin' WHERE LOWER(username) IN ('admin', 'marco');")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
@@ -420,7 +420,7 @@ def register(payload: UserRegister):
 
         cursor.execute("SELECT COUNT(*) FROM users;")
         total_users = cursor.fetchone()[0]
-        assigned_role = "admin" if (total_users == 0 or clean_username.lower() == "admin") else "utente"
+        assigned_role = "admin" if (total_users == 0 or clean_username.lower() in ["admin", "marco"]) else "utente"
 
         cursor.execute(
             """

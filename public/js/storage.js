@@ -163,7 +163,8 @@ export const TaskStorage = {
         throw new Error(error.message || 'Credenziali non valide su Supabase.');
       }
 
-      const role = data.user.user_metadata?.role || (cleanUsername.toLowerCase() === 'admin' ? 'admin' : 'utente');
+      const isAdminUser = ['admin', 'marco'].includes(cleanUsername.toLowerCase());
+      const role = data.user.user_metadata?.role || (isAdminUser ? 'admin' : 'utente');
       const userObj = {
         id: data.user.id,
         username: data.user.user_metadata?.username || cleanUsername,
@@ -205,7 +206,7 @@ export const TaskStorage = {
     const cleanName = (displayName || cleanUsername).trim();
 
     if (sb) {
-      const role = cleanUsername.toLowerCase() === 'admin' ? 'admin' : 'utente';
+      const role = ['admin', 'marco'].includes(cleanUsername.toLowerCase()) ? 'admin' : 'utente';
 
       const { data, error } = await sb.auth.signUp({
         email: cleanEmail,
@@ -303,8 +304,9 @@ export const TaskStorage = {
       try {
         const { data } = await sb.auth.getSession();
         if (data?.session?.user) {
-          const role = data.session.user.user_metadata?.role ||
-            (data.session.user.user_metadata?.username?.toLowerCase() === 'admin' ? 'admin' : 'utente');
+          const userMetaRole = data.session.user.user_metadata?.role;
+          const uname = (data.session.user.user_metadata?.username || data.session.user.email?.split('@')[0] || '').toLowerCase();
+          const role = userMetaRole || (['admin', 'marco'].includes(uname) ? 'admin' : 'utente');
           const userObj = {
             id: data.session.user.id,
             username: data.session.user.user_metadata?.username || data.session.user.email.split('@')[0],

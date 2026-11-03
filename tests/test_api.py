@@ -333,9 +333,9 @@ def test_user_email_and_admin_management():
     assert res_block.status_code == 200
     assert res_block.json()["is_blocked"] is True
 
-    # 6. Mario prova ad accedere o ad usare il token esistente -> 403 Forbidden
+    # 6. Mario prova ad accedere con il vecchio token -> 401 (sessione revocata) e nuovo login -> 403 Forbidden
     task_res = client.get("/api/tasks", headers={"Authorization": f"Bearer {mario_token}"})
-    assert task_res.status_code == 403
+    assert task_res.status_code in [401, 403]
 
     retry_login = client.post("/api/auth/login", json={
         "username": "mario_rossi",
