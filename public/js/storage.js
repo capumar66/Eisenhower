@@ -672,22 +672,134 @@ export const TaskStorage = {
   },
 
   async createAdminUser({ username, email, password, displayName, role }) {
-    const res = await fetch(`${API_BASE}/admin/users`, {
-      method: 'POST',
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify({
-        username,
-        email,
-        password,
-        display_name: displayName || username,
-        role: role || 'utente'
-      })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Errore creazione utente' }));
-      throw new Error(err.detail || 'Impossibile creare il nuovo utente');
+    const url = envSupabaseUrl || localStorage.getItem(SUPABASE_URL_KEY);
+    const key = envSupabaseKey || localStorage.getItem(SUPABASE_ANON_KEY);
+    let sbCreated = false;
+
+    // Se Supabase Cloud è configurato, registra l'utente in Supabase Auth tramite client dedicato
+    if (url && key && window.supabase && typeof window.supabase.createClient === 'function') {
+      try {
+        const tempClient = window.supabase.createClient(url.trim(), key.trim(), {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        });
+        const { data, error } = await tempClient.auth.signUp({
+          email: email.trim(),
+          password: password,
+          options: {
+            data: {
+              username: username.trim(),
+              display_name: (displayName || username).trim(),
+              role: role || 'utente',
+              email: email.trim()
+            }
+          }
+        });
+        if (error) {
+          throw new Error(error.message || 'Errore creazione utente su Supabase');
+        }
+        sbCreated = true;
+      } catch (sbErr) {
+        console.warn('Errore creazione utente su Supabase Auth:', sbErr);
+        throw sbErr;
+      }
     }
-    return await res.json();
+
+    // Sincronizza anche sul backend API
+    try {
+      const res = await fetch(`${API_BASE}/admin/users`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          display_name: displayName || username,
+          role: role || 'utente'
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Errore creazione utente' }));
+        if (!sbCreated) {
+          throw new Error(err.detail || 'Impossibile creare il nuovo utente');
+        }
+      } else {
+        return await res.json();
+      }
+    } catch (apiErr) {
+      if (!sbCreated) throw apiErr;
+    }
+
+    return {
+      id: 'user_' + Date.now(),
+      username,
+      email,
+      display_name: displayName || username,
+      role: role || 'utente',
+      is_blocked: false,
+      created_at: new Date().toISOString(),
+      task_count: 0
+    };
+  },
+
+  async updateUser(userId, { display_name, email, password, role }) {
+    const sb = getSupabase();
+    const curr = this.getUser();
+    const isCurrent = curr && (curr.id === userId || curr.username === userId);
+
+    if (sb && isCurrent) {
+      try {
+        const updateData = {};
+        if (display_name !== undefined) {
+          updateData.data = { ...(curr.user_metadata || {}), display_name: display_name.trim() };
+        }
+        if (email) updateData.email = email.trim();
+        if (password) updateData.password = password;
+        const { error } = await sb.auth.updateUser(updateData);
+        if (error) throw new Error(error.message || 'Errore aggiornamento utente Supabase');
+      } catch (err) {
+        console.warn('Errore sync updateUser Supabase:', err);
+      }
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          display_name,
+          email,
+          password,
+          role
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        if (isCurrent) {
+          curr.display_name = updated.display_name;
+          curr.email = updated.email;
+          if (updated.role) curr.role = updated.role;
+          this.setUser(curr);
+        }
+        return updated;
+      }
+    } catch (e) {
+      console.warn('Errore API update user:', e);
+    }
+
+    // Se stiamo aggiornando l'utente corrente in locale
+    if (isCurrent) {
+      if (display_name) curr.display_name = display_name;
+      if (email) curr.email = email;
+      if (role) curr.role = role;
+      this.setUser(curr);
+      return curr;
+    }
+
+    return { id: userId, display_name, email, role };
   },
 
   async toggleBlockUser(userId) {

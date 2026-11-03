@@ -1326,6 +1326,33 @@ body {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.user-pill {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.user-pill:hover {
+  filter: brightness(1.18);
+  transform: translateY(-1px);
+}
+
+.btn-edit-user {
+  background: none;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #818cf8;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-edit-user:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
 .btn-del-user {
   background: none;
   border: 1px solid rgba(239, 68, 68, 0.4);

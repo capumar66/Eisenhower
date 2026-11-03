@@ -60,10 +60,25 @@ class EisenhowerApp {
     // User Profile & Logout Elements
     this.btnOpenAuth = document.querySelector('#btn-open-auth');
     this.userSection = document.querySelector('#user-section');
+    this.userProfileBadge = document.querySelector('#user-profile-badge');
     this.userDisplayName = document.querySelector('#user-display-name');
     this.userRoleBadge = document.querySelector('#user-role-badge');
     this.btnOpenAdmin = document.querySelector('#btn-open-admin');
     this.btnLogout = document.querySelector('#btn-logout');
+
+    // Edit User Modal Elements
+    this.editUserModal = document.querySelector('#edit-user-modal');
+    this.editUserModalCloseBtn = document.querySelector('#edit-user-modal-close-btn');
+    this.editUserCancelBtn = document.querySelector('#edit-user-cancel-btn');
+    this.editUserForm = document.querySelector('#edit-user-form');
+    this.editUserId = document.querySelector('#edit-user-id');
+    this.editUserUsername = document.querySelector('#edit-user-username');
+    this.editUserName = document.querySelector('#edit-user-name');
+    this.editUserEmail = document.querySelector('#edit-user-email');
+    this.editUserPassword = document.querySelector('#edit-user-password');
+    this.editUserRole = document.querySelector('#edit-user-role');
+    this.editUserRoleGroup = document.querySelector('#edit-user-role-group');
+    this.editUserModalTitle = document.querySelector('#edit-user-modal-title');
 
     // Admin Modal Elements
     this.adminModal = document.querySelector('#admin-modal');
@@ -303,6 +318,8 @@ class EisenhowerApp {
           ? `<button class="btn-unblock-user" data-uid="${u.id}" data-uname="${u.username}" title="Sblocca accesso utente">Sblocca</button>`
           : `<button class="btn-block-user" data-uid="${u.id}" data-uname="${u.username}" title="Blocca accesso utente">Blocca</button>`;
 
+        const editBtn = `<button class="btn-edit-user" data-uid="${u.id}" data-uname="${u.username}" data-name="${u.display_name || ''}" data-email="${u.email || ''}" data-role="${u.role}" title="Modifica dati utente">✏️ Modifica</button>`;
+
         tr.innerHTML = `
           <td><strong>${u.username}</strong> ${isCurrent ? '<small style="color: #818cf8;">(Tu)</small>' : ''}</td>
           <td>${u.email || '-'}</td>
@@ -310,16 +327,29 @@ class EisenhowerApp {
           <td>${statusBadge}</td>
           <td>${u.task_count ?? '-'}</td>
           <td>
-            ${isCurrent 
-              ? '<span style="color: var(--text-muted); font-size: 0.72rem;">(Account Corrente)</span>' 
-              : `<div class="admin-actions-cell">
-                   ${blockBtn}
-                   <button class="btn-del-user" data-uid="${u.id}" data-uname="${u.username}" title="Elimina definitivamente">Elimina</button>
-                 </div>`
-            }
+            <div class="admin-actions-cell">
+              ${editBtn}
+              ${isCurrent ? '' : blockBtn}
+              ${isCurrent ? '' : `<button class="btn-del-user" data-uid="${u.id}" data-uname="${u.username}" title="Elimina definitivamente">Elimina</button>`}
+            </div>
           </td>
         `;
         this.adminUsersTbody.appendChild(tr);
+      });
+
+      // Event listener per modifica utente
+      this.adminUsersTbody.querySelectorAll('.btn-edit-user').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget;
+          const uObj = {
+            id: target.dataset.uid,
+            username: target.dataset.uname,
+            display_name: target.dataset.name,
+            email: target.dataset.email,
+            role: target.dataset.role
+          };
+          this.openEditUserModal(uObj);
+        });
       });
 
       // Event listener per blocco/sblocco utente
@@ -458,6 +488,72 @@ class EisenhowerApp {
       if (e.target === this.authModal) {
         if (!this.currentUser) return; // Non chiudere se non autenticato
         this.closeAuthModal();
+      }
+    });
+
+    // User Profile Trigger (apre form modifica utente corrente)
+    this.userProfileBadge?.addEventListener('click', () => {
+      if (this.currentUser) {
+        this.openEditUserModal(this.currentUser);
+      }
+    });
+
+    // Edit User Modal Triggers
+    this.editUserModalCloseBtn?.addEventListener('click', () => this.closeEditUserModal());
+    this.editUserCancelBtn?.addEventListener('click', () => this.closeEditUserModal());
+    this.editUserModal?.addEventListener('click', (e) => {
+      if (e.target === this.editUserModal) this.closeEditUserModal();
+    });
+
+    // Submit Modifica Utente Form
+    this.editUserForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const userId = this.editUserId.value;
+      const displayName = this.editUserName.value.trim();
+      const email = this.editUserEmail.value.trim();
+      const password = this.editUserPassword.value;
+      const role = this.editUserRole?.value;
+
+      if (!email || !email.includes('@')) {
+        alert('Inserisci un indirizzo email valido.');
+        return;
+      }
+      if (password && password.length < 6) {
+        alert('La nuova password deve contenere almeno 6 caratteri.');
+        return;
+      }
+
+      const submitBtn = this.editUserForm.querySelector('button[type="submit"]');
+      const originalText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Salvataggio...';
+      }
+
+      try {
+        const payload = { display_name: displayName, email };
+        if (password) payload.password = password;
+        if (role) payload.role = role;
+
+        const updated = await TaskStorage.updateUser(userId, payload);
+        const isCurrent = this.currentUser && (this.currentUser.id === userId || this.currentUser.username === userId);
+        if (isCurrent) {
+          this.currentUser.display_name = updated.display_name || displayName;
+          this.currentUser.email = updated.email || email;
+          this.updateUserUI(this.currentUser);
+        }
+        this.showToast('Dati utente aggiornati con successo!');
+        this.closeEditUserModal();
+        if (this.adminModal?.classList.contains('is-open')) {
+          this.loadAdminData();
+        }
+      } catch (err) {
+        alert('Errore aggiornamento utente: ' + err.message);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
       }
     });
 
@@ -682,6 +778,10 @@ class EisenhowerApp {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if (this.editUserModal?.classList.contains('is-open')) {
+          this.closeEditUserModal();
+          return;
+        }
         if (this.archiveModal?.classList.contains('is-open')) {
           this.closeArchiveModal();
           return;
@@ -1056,6 +1156,36 @@ class EisenhowerApp {
   // -------------------------------------------------------------------------
   // Modal Handlers
   // -------------------------------------------------------------------------
+  openEditUserModal(user) {
+    if (!this.editUserModal || !user) return;
+    this.editUserId.value = user.id || '';
+    this.editUserUsername.value = user.username || '';
+    this.editUserName.value = user.display_name || user.username || '';
+    this.editUserEmail.value = user.email || '';
+    this.editUserPassword.value = '';
+    if (this.editUserRole) {
+      this.editUserRole.value = user.role || 'utente';
+    }
+
+    const isCurrent = this.currentUser && (this.currentUser.id === user.id || this.currentUser.username === user.username);
+    if (this.editUserModalTitle) {
+      this.editUserModalTitle.textContent = isCurrent ? '✏️ Il Mio Profilo' : `✏️ Modifica Utenza: ${user.username}`;
+    }
+
+    if (this.editUserRoleGroup) {
+      const isAdmin = this.currentUser && this.currentUser.role === 'admin';
+      this.editUserRoleGroup.style.display = (isAdmin && !isCurrent) ? 'block' : 'none';
+    }
+
+    this.editUserModal.classList.add('is-open');
+    setTimeout(() => this.editUserName?.focus(), 100);
+  }
+
+  closeEditUserModal() {
+    if (!this.editUserModal) return;
+    this.editUserModal.classList.remove('is-open');
+  }
+
   openTaskModal(taskToEdit = null) {
     if (taskToEdit) {
       this.editingTaskId = taskToEdit.id;

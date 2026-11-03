@@ -359,3 +359,66 @@ def test_user_email_and_admin_management():
     # 8. Admin non può bloccare se stesso
     self_block = client.post(f"/api/admin/users/{res_admin.json()['user']['id']}/toggle-block", headers={"Authorization": f"Bearer {admin_token}"})
     assert self_block.status_code == 400
+
+def test_user_profile_edit_and_jwt_auth():
+    """Verifica modifica profilo utente corrente, modifica utente da admin e autenticazione con JWT Supabase."""
+    import base64
+    import json
+    import time
+
+    # Registra un utente
+    reg = client.post("/api/auth/register", json={
+        "username": "luigi_verdi",
+        "email": "luigi@example.com",
+        "password": "Password123!",
+        "display_name": "Luigi"
+    })
+    assert reg.status_code == 201
+    token = reg.json()["token"]
+    user_id = reg.json()["user"]["id"]
+
+    # 1. Luigi modifica il proprio profilo (display_name ed email)
+    put_me = client.put("/api/auth/me", headers={"Authorization": f"Bearer {token}"}, json={
+        "display_name": "Luigi Verdi Jr",
+        "email": "luigi.verdi@example.com"
+    })
+    assert put_me.status_code == 200
+    assert put_me.json()["display_name"] == "Luigi Verdi Jr"
+    assert put_me.json()["email"] == "luigi.verdi@example.com"
+
+    # 2. Login con la nuova email
+    login_new = client.post("/api/auth/login", json={
+        "username": "luigi.verdi@example.com",
+        "password": "Password123!"
+    })
+    assert login_new.status_code == 200
+
+    # 3. Verifica autenticazione trasparente con Supabase JWT per utente admin Marco
+    header_b64 = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode("utf-8").rstrip("=")
+    payload_data = {
+        "sub": "sb-marco-uuid-1234",
+        "email": "marco@azienda.it",
+        "user_metadata": {
+            "username": "Marco",
+            "display_name": "Marco Capuano",
+            "role": "admin"
+        },
+        "exp": int(time.time()) + 3600
+    }
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload_data).encode("utf-8")).decode("utf-8").rstrip("=")
+    fake_jwt = f"{header_b64}.{payload_b64}.fake_sig"
+
+    # Marco accede alle API con il Supabase JWT
+    res_me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {fake_jwt}"})
+    assert res_me.status_code == 200
+    assert res_me.json()["username"] == "Marco"
+    assert res_me.json()["role"] == "admin"
+
+    # Marco usa il suo Supabase JWT per modificare Luigi
+    put_admin = client.put(f"/api/admin/users/{user_id}", headers={"Authorization": f"Bearer {fake_jwt}"}, json={
+        "display_name": "Luigi Modificato da Admin",
+        "role": "admin"
+    })
+    assert put_admin.status_code == 200
+    assert put_admin.json()["display_name"] == "Luigi Modificato da Admin"
+    assert put_admin.json()["role"] == "admin"

@@ -89,7 +89,7 @@
 
         <!-- User Profile & Logout (visibile dopo login) -->
         <div id="user-section" class="user-section" style="display: none;">
-          <div class="user-pill" id="user-profile-badge" title="Profilo utente">
+          <div class="user-pill" id="user-profile-badge" title="Clicca per modificare il tuo profilo">
             <span id="user-role-badge" class="role-badge role-utente">Utente</span>
             <span id="user-display-name" class="user-name">Utente</span>
           </div>
@@ -555,10 +555,64 @@
     </div>
   </div>
 
+  <!-- =========================================================================
+       Modal: Modifica Utente / Profilo
+       ========================================================================= -->
+  <div id="edit-user-modal" class="modal-backdrop">
+    <div class="modal-window" style="max-width: 480px;">
+      
+      <div class="modal-header">
+        <h3 id="edit-user-modal-title" class="modal-title">✏️ Modifica Utenza</h3>
+        <button id="edit-user-modal-close-btn" class="task-btn" style="font-size: 1.1rem;">✕</button>
+      </div>
+
+      <form id="edit-user-form">
+        <div class="modal-body">
+          <input type="hidden" id="edit-user-id">
+          
+          <div class="form-group">
+            <label class="form-label" for="edit-user-username">Nome Utente (Username)</label>
+            <input type="text" id="edit-user-username" class="form-input" disabled style="opacity: 0.7; cursor: not-allowed;">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-user-name">Nome Visualizzato</label>
+            <input type="text" id="edit-user-name" class="form-input" placeholder="Es. Marco Capuano" maxlength="50" autocomplete="name">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-user-email">Indirizzo Email *</label>
+            <input type="email" id="edit-user-email" class="form-input" placeholder="mario.rossi@example.com" required autocomplete="email">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="edit-user-password">Nuova Password (Opzionale)</label>
+            <input type="password" id="edit-user-password" class="form-input" placeholder="Lascia vuoto per non modificare" minlength="6" autocomplete="new-password">
+            <small style="color: var(--text-muted); font-size: 0.72rem; margin-top: 3px; display: block;">Compila solo se desideri cambiare la password (min. 6 caratteri).</small>
+          </div>
+
+          <div class="form-group" id="edit-user-role-group">
+            <label class="form-label" for="edit-user-role">Ruolo Utente</label>
+            <select id="edit-user-role" class="form-select">
+              <option value="utente">👤 Utente standard</option>
+              <option value="admin">👑 Amministratore</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="edit-user-cancel-btn" class="btn btn-secondary">Annulla</button>
+          <button type="submit" id="edit-user-submit-btn" class="btn btn-primary">Salva Modifiche</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js?v=2.9"></script>
+  <script type="module" src="/js/app.js?v=3.0"></script>
 </body>
 </html>
