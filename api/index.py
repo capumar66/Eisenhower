@@ -732,17 +732,28 @@ def create_user_by_admin(payload: AdminUserCreate, current_user: UserResponse = 
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (clean_username.lower(),))
-        if cursor.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Nome utente già utilizzato. Scegline un altro."
+        cursor.execute(
+            "SELECT id, username, email, display_name, role, is_blocked, created_at FROM users WHERE LOWER(username) = ? OR (email IS NOT NULL AND LOWER(email) = ?)",
+            (clean_username.lower(), clean_email)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute(
+                "UPDATE users SET email = ?, display_name = ?, role = ? WHERE id = ?",
+                (clean_email, display_name, role, existing["id"])
             )
-        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
-        if cursor.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indirizzo email già utilizzato. Scegline un altro."
+            conn.commit()
+            cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_id = ?", (existing["id"],))
+            t_count = cursor.fetchone()[0]
+            return AdminUserItem(
+                id=existing["id"],
+                username=existing["username"],
+                email=clean_email,
+                display_name=display_name,
+                role=role,
+                is_blocked=bool(existing["is_blocked"]),
+                created_at=existing["created_at"],
+                task_count=t_count
             )
 
         cursor.execute(

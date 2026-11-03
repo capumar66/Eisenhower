@@ -467,9 +467,9 @@ class EisenhowerApp {
           password,
           role
         });
-        this.showToast(`Utente "${username}" creato con successo!`);
+        this.showToast(`Utente "${username}" salvato con successo!`);
         hideAdminCreateForm();
-        this.loadAdminData();
+        await this.loadAdminData();
       } catch (err) {
         alert('Errore creazione utente: ' + err.message);
       } finally {

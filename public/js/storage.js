@@ -800,18 +800,26 @@ export const TaskStorage = {
           }
         });
 
+        let isAlreadyRegistered = false;
         if (error) {
-          throw new Error(error.message || 'Errore creazione utente su Supabase');
+          if (error.message && error.message.toLowerCase().includes('already registered')) {
+            isAlreadyRegistered = true;
+          } else {
+            throw new Error(error.message || 'Errore creazione utente su Supabase');
+          }
+        } else if (data?.user?.identities && data.user.identities.length === 0) {
+          isAlreadyRegistered = true;
         }
 
-        if (data?.user?.identities && data.user.identities.length === 0) {
-          throw new Error(`L'indirizzo email "${cleanEmail}" è già registrato su Supabase.`);
-        }
-
-        if (data?.user) {
+        if (isAlreadyRegistered) {
+          sbCreated = true;
+          newUserId = data?.user?.id || ('sb_' + btoa(cleanEmail).replace(/=/g, '').substring(0, 16));
+        } else if (data?.user) {
           newUserId = data.user.id;
           sbCreated = true;
-          // Se la tabella users esiste su Supabase, effettua l'upsert del record
+        }
+
+        if (newUserId && sb) {
           try {
             await sb.from('users').upsert({
               id: newUserId,
@@ -820,10 +828,10 @@ export const TaskStorage = {
               display_name: cleanName,
               role: userRole,
               is_blocked: false,
-              created_at: data.user.created_at || new Date().toISOString()
+              created_at: data?.user?.created_at || new Date().toISOString()
             });
           } catch (tErr) {
-            console.warn('Tabella users non disponibile su Supabase (profilo auth creato):', tErr);
+            console.warn('Tabella users non disponibile su Supabase (profilo auth registrato):', tErr);
           }
         }
       } catch (sbErr) {
