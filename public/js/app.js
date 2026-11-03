@@ -74,6 +74,16 @@ class EisenhowerApp {
     this.adminDbEngine = document.querySelector('#admin-db-engine');
     this.adminUsersTbody = document.querySelector('#admin-users-tbody');
     this.btnAdminRefreshUsers = document.querySelector('#btn-admin-refresh-users');
+    this.btnAdminShowCreateForm = document.querySelector('#btn-admin-show-create-form');
+    this.adminCreateUserCard = document.querySelector('#admin-create-user-card');
+    this.btnAdminCloseCreateForm = document.querySelector('#btn-admin-close-create-form');
+    this.adminCreateUserForm = document.querySelector('#admin-create-user-form');
+    this.adminNewUsername = document.querySelector('#admin-new-username');
+    this.adminNewEmail = document.querySelector('#admin-new-email');
+    this.adminNewName = document.querySelector('#admin-new-name');
+    this.adminNewPassword = document.querySelector('#admin-new-password');
+    this.adminNewRole = document.querySelector('#admin-new-role');
+    this.btnAdminCancelCreate = document.querySelector('#btn-admin-cancel-create');
 
     // Auth Modal Elements
     this.authModal = document.querySelector('#auth-modal');
@@ -88,6 +98,7 @@ class EisenhowerApp {
     this.loginPassword = document.querySelector('#login-password');
 
     this.registerUsername = document.querySelector('#register-username');
+    this.registerEmail = document.querySelector('#register-email');
     this.registerName = document.querySelector('#register-name');
     this.registerPassword = document.querySelector('#register-password');
     this.registerPasswordConfirm = document.querySelector('#register-password-confirm');
@@ -268,12 +279,12 @@ class EisenhowerApp {
     }
 
     if (!this.adminUsersTbody) return;
-    this.adminUsersTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Caricamento utenti in corso...</td></tr>';
+    this.adminUsersTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Caricamento utenti in corso...</td></tr>';
 
     try {
       const users = await TaskStorage.getAdminUsers();
       if (!users || users.length === 0) {
-        this.adminUsersTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nessun utente trovato.</td></tr>';
+        this.adminUsersTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nessun utente trovato.</td></tr>';
         return;
       }
 
@@ -283,24 +294,59 @@ class EisenhowerApp {
         const isCurrent = this.currentUser && this.currentUser.id === u.id;
         const roleClass = u.role === 'admin' ? 'role-admin' : 'role-utente';
         const roleLabel = u.role === 'admin' ? '👑 Admin' : '👤 Utente';
+        const isBlocked = Boolean(u.is_blocked);
+        const statusBadge = isBlocked 
+          ? '<span class="status-badge status-blocked">⛔ Bloccato</span>' 
+          : '<span class="status-badge status-active">✅ Attivo</span>';
+
+        const blockBtn = isBlocked
+          ? `<button class="btn-unblock-user" data-uid="${u.id}" data-uname="${u.username}" title="Sblocca accesso utente">Sblocca</button>`
+          : `<button class="btn-block-user" data-uid="${u.id}" data-uname="${u.username}" title="Blocca accesso utente">Blocca</button>`;
 
         tr.innerHTML = `
           <td><strong>${u.username}</strong> ${isCurrent ? '<small style="color: #818cf8;">(Tu)</small>' : ''}</td>
-          <td>${u.display_name || '-'}</td>
+          <td>${u.email || '-'}</td>
           <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
+          <td>${statusBadge}</td>
           <td>${u.task_count ?? '-'}</td>
           <td>
-            ${isCurrent ? '<span style="color: var(--text-muted); font-size: 0.72rem;">Attivo</span>' : `<button class="btn-del-user" data-uid="${u.id}" data-uname="${u.username}">Elimina</button>`}
+            ${isCurrent 
+              ? '<span style="color: var(--text-muted); font-size: 0.72rem;">(Account Corrente)</span>' 
+              : `<div class="admin-actions-cell">
+                   ${blockBtn}
+                   <button class="btn-del-user" data-uid="${u.id}" data-uname="${u.username}" title="Elimina definitivamente">Elimina</button>
+                 </div>`
+            }
           </td>
         `;
         this.adminUsersTbody.appendChild(tr);
       });
 
+      // Event listener per blocco/sblocco utente
+      this.adminUsersTbody.querySelectorAll('.btn-block-user, .btn-unblock-user').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const uid = e.target.dataset.uid;
+          const uname = e.target.dataset.uname;
+          const isCurrentlyBlocked = e.target.classList.contains('btn-unblock-user');
+          const actionText = isCurrentlyBlocked ? 'sbloccare' : 'bloccare';
+          if (confirm(`Sei sicuro di voler ${actionText} l'accesso dell'utente "${uname}"?`)) {
+            try {
+              const res = await TaskStorage.toggleBlockUser(uid);
+              this.showToast(res.detail || (isCurrentlyBlocked ? `Utente "${uname}" sbloccato.` : `Utente "${uname}" bloccato con disconnessione immediata.`));
+              this.loadAdminData();
+            } catch (err) {
+              alert('Errore: ' + err.message);
+            }
+          }
+        });
+      });
+
+      // Event listener per eliminazione utente
       this.adminUsersTbody.querySelectorAll('.btn-del-user').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const uid = e.target.dataset.uid;
           const uname = e.target.dataset.uname;
-          if (confirm(`Sei sicuro di voler eliminare l'utente "${uname}" e tutte le sue attività?`)) {
+          if (confirm(`Sei sicuro di voler eliminare definitivamente l'utente "${uname}" e tutte le sue attività?`)) {
             try {
               await TaskStorage.deleteUser(uid);
               this.showToast(`Utente "${uname}" eliminato.`);
@@ -313,7 +359,7 @@ class EisenhowerApp {
       });
 
     } catch (err) {
-      this.adminUsersTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #f87171;">${err.message || 'Errore caricamento utenti'}</td></tr>`;
+      this.adminUsersTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f87171;">${err.message || 'Errore caricamento utenti'}</td></tr>`;
     }
   }
 
@@ -341,6 +387,69 @@ class EisenhowerApp {
       if (e.target === this.adminModal) this.closeAdminModal();
     });
 
+    // Mostra / Nascondi Form Creazione Utente Admin
+    this.btnAdminShowCreateForm?.addEventListener('click', () => {
+      if (this.adminCreateUserCard) {
+        const isHidden = this.adminCreateUserCard.style.display === 'none' || !this.adminCreateUserCard.style.display;
+        this.adminCreateUserCard.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+          this.adminNewUsername?.focus();
+        }
+      }
+    });
+
+    const hideAdminCreateForm = () => {
+      if (this.adminCreateUserCard) {
+        this.adminCreateUserCard.style.display = 'none';
+      }
+      this.adminCreateUserForm?.reset();
+    };
+
+    this.btnAdminCloseCreateForm?.addEventListener('click', hideAdminCreateForm);
+    this.btnAdminCancelCreate?.addEventListener('click', hideAdminCreateForm);
+
+    // Submit Form Creazione Utente Admin
+    this.adminCreateUserForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = this.adminNewUsername.value.trim();
+      const email = this.adminNewEmail.value.trim();
+      const displayName = this.adminNewName.value.trim();
+      const password = this.adminNewPassword.value;
+      const role = this.adminNewRole.value;
+
+      if (!username || !email || !password) {
+        alert('Compila tutti i campi obbligatori (Username, Email, Password).');
+        return;
+      }
+
+      const submitBtn = this.adminCreateUserForm.querySelector('button[type="submit"]');
+      const originalText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creazione...';
+      }
+
+      try {
+        await TaskStorage.createAdminUser({
+          username,
+          email,
+          displayName,
+          password,
+          role
+        });
+        this.showToast(`Utente "${username}" creato con successo!`);
+        hideAdminCreateForm();
+        this.loadAdminData();
+      } catch (err) {
+        alert('Errore creazione utente: ' + err.message);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
+      }
+    });
+
     // Close Auth Modal
     this.authModalCloseBtn?.addEventListener('click', () => {
       if (this.currentUser) this.closeAuthModal();
@@ -358,6 +467,12 @@ class EisenhowerApp {
 
     // Navigazione fluida tasto Invio nei campi di registrazione (previene submit accidentali)
     this.registerUsername?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.registerEmail?.focus();
+      }
+    });
+    this.registerEmail?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         this.registerName?.focus();
@@ -385,7 +500,7 @@ class EisenhowerApp {
       const password = this.loginPassword.value;
 
       if (!username || !password) {
-        this.showAuthError('Inserisci sia nome utente che password.');
+        this.showAuthError('Inserisci sia nome utente/email che password.');
         return;
       }
 
@@ -421,12 +536,18 @@ class EisenhowerApp {
       this.hideAuthError();
 
       const username = this.registerUsername.value.trim();
+      const email = this.registerEmail ? this.registerEmail.value.trim() : '';
       const displayName = this.registerName.value.trim();
       const password = this.registerPassword.value;
       const confirmPassword = this.registerPasswordConfirm.value;
 
       if (username.length < 3) {
         this.showAuthError('Il nome utente deve contenere almeno 3 caratteri.');
+        return;
+      }
+
+      if (!email || !email.includes('@')) {
+        this.showAuthError('Inserisci un indirizzo email valido.');
         return;
       }
 
@@ -448,7 +569,7 @@ class EisenhowerApp {
       }
 
       try {
-        const user = await TaskStorage.register(username, password, displayName);
+        const user = await TaskStorage.register(username, password, displayName, email);
         this.currentUser = user;
         this.updateUserUI(user);
         this.closeAuthModal();

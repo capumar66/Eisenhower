@@ -284,3 +284,78 @@ def test_task_completed_status_toggle():
     restored = client.put(f"/api/tasks/{task_id}", headers=headers, json={"completed": False})
     assert restored.status_code == 200
     assert restored.json()["completed"] is False
+
+def test_user_email_and_admin_management():
+    """Verifica registrazione/login con email e gestione utenze da admin (creazione, blocco, sblocco, cancellazione)."""
+    # 1. Registra Admin con email
+    res_admin = client.post("/api/auth/register", json={
+        "username": "boss_admin",
+        "email": "boss@azienda.it",
+        "password": "Password123!",
+        "display_name": "Boss Admin"
+    })
+    assert res_admin.status_code == 201
+    admin_token = res_admin.json()["token"]
+    assert res_admin.json()["user"]["email"] == "boss@azienda.it"
+    assert res_admin.json()["user"]["role"] == "admin"
+
+    # 2. Login con Email anziché username
+    login_by_email = client.post("/api/auth/login", json={
+        "username": "boss@azienda.it",
+        "password": "Password123!"
+    })
+    assert login_by_email.status_code == 200
+    assert login_by_email.json()["user"]["username"] == "boss_admin"
+
+    # 3. Admin crea un nuovo utente tramite form Admin
+    res_create = client.post("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"}, json={
+        "username": "mario_rossi",
+        "email": "mario.rossi@azienda.it",
+        "password": "Password123!",
+        "display_name": "Mario Rossi",
+        "role": "utente"
+    })
+    assert res_create.status_code == 201
+    mario_id = res_create.json()["id"]
+    assert res_create.json()["email"] == "mario.rossi@azienda.it"
+    assert res_create.json()["is_blocked"] is False
+
+    # 4. Mario effettua il login
+    login_mario = client.post("/api/auth/login", json={
+        "username": "mario.rossi@azienda.it",
+        "password": "Password123!"
+    })
+    assert login_mario.status_code == 200
+    mario_token = login_mario.json()["token"]
+
+    # 5. Admin blocca Mario
+    res_block = client.post(f"/api/admin/users/{mario_id}/toggle-block", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res_block.status_code == 200
+    assert res_block.json()["is_blocked"] is True
+
+    # 6. Mario prova ad accedere o ad usare il token esistente -> 403 Forbidden
+    task_res = client.get("/api/tasks", headers={"Authorization": f"Bearer {mario_token}"})
+    assert task_res.status_code == 403
+
+    retry_login = client.post("/api/auth/login", json={
+        "username": "mario_rossi",
+        "password": "Password123!"
+    })
+    assert retry_login.status_code == 403
+    assert "bloccato" in retry_login.json()["detail"]
+
+    # 7. Admin sblocca Mario
+    res_unblock = client.post(f"/api/admin/users/{mario_id}/toggle-block", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res_unblock.status_code == 200
+    assert res_unblock.json()["is_blocked"] is False
+
+    # Mario ora può rientrare
+    login_again = client.post("/api/auth/login", json={
+        "username": "mario.rossi@azienda.it",
+        "password": "Password123!"
+    })
+    assert login_again.status_code == 200
+
+    # 8. Admin non può bloccare se stesso
+    self_block = client.post(f"/api/admin/users/{res_admin.json()['user']['id']}/toggle-block", headers={"Authorization": f"Bearer {admin_token}"})
+    assert self_block.status_code == 400

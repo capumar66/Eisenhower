@@ -1343,6 +1343,105 @@ body {
   color: #fca5a5;
 }
 
+.btn-block-user {
+  background: none;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-block-user:hover {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fde68a;
+}
+
+.btn-unblock-user {
+  background: none;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-unblock-user:hover {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.status-badge.status-active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-badge.status-blocked {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.admin-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-create-form-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: fadeIn 0.2s ease;
+}
+
+.admin-create-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-create-form-header h5 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.admin-create-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* ==========================================================================
    Coda Attività Svolte (Archivio Nascosto) & Badge
    ========================================================================== */

@@ -167,6 +167,7 @@ export const TaskStorage = {
       const userObj = {
         id: data.user.id,
         username: data.user.user_metadata?.username || cleanUsername,
+        email: data.user.email || email,
         display_name: data.user.user_metadata?.display_name || cleanUsername,
         role: role
       };
@@ -195,24 +196,26 @@ export const TaskStorage = {
     return data.user;
   },
 
-  async register(username, password, displayName) {
+  async register(username, password, displayName, email = null) {
     const sb = getSupabase();
+    const cleanUsername = username.trim();
+    const cleanEmail = (email && email.trim()) 
+      ? email.trim() 
+      : (cleanUsername.includes('@') ? cleanUsername : `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`);
+    const cleanName = (displayName || cleanUsername).trim();
+
     if (sb) {
-      const cleanUsername = username.trim();
-      const cleanName = (displayName || cleanUsername).trim();
       const role = cleanUsername.toLowerCase() === 'admin' ? 'admin' : 'utente';
-      const email = cleanUsername.includes('@') 
-        ? cleanUsername 
-        : `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
 
       const { data, error } = await sb.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
           data: {
             username: cleanUsername,
             display_name: cleanName,
-            role: role
+            role: role,
+            email: cleanEmail
           }
         }
       });
@@ -228,6 +231,7 @@ export const TaskStorage = {
       const userObj = {
         id: data.user.id,
         username: cleanUsername,
+        email: cleanEmail,
         display_name: cleanName,
         role: role
       };
@@ -249,9 +253,10 @@ export const TaskStorage = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username,
+        username: cleanUsername,
+        email: cleanEmail,
         password,
-        display_name: displayName || username
+        display_name: cleanName
       })
     });
 
@@ -646,8 +651,10 @@ export const TaskStorage = {
       return [{
         id: curr.id,
         username: curr.username,
+        email: curr.email || `${curr.username}@eisenhower.app`,
         display_name: curr.display_name,
         role: curr.role || 'admin',
+        is_blocked: false,
         created_at: new Date().toISOString(),
         task_count: (this.getLocalTasks() || []).length
       }];
@@ -658,6 +665,37 @@ export const TaskStorage = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Errore recupero utenti' }));
       throw new Error(err.detail || 'Impossibile recuperare elenco utenti');
+    }
+    return await res.json();
+  },
+
+  async createAdminUser({ username, email, password, displayName, role }) {
+    const res = await fetch(`${API_BASE}/admin/users`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({
+        username,
+        email,
+        password,
+        display_name: displayName || username,
+        role: role || 'utente'
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Errore creazione utente' }));
+      throw new Error(err.detail || 'Impossibile creare il nuovo utente');
+    }
+    return await res.json();
+  },
+
+  async toggleBlockUser(userId) {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/toggle-block`, {
+      method: 'POST',
+      headers: this.getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Errore modifica stato blocco utente' }));
+      throw new Error(err.detail || 'Impossibile aggiornare lo stato di blocco dell\'utente');
     }
     return await res.json();
   },

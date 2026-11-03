@@ -290,8 +290,8 @@
       <!-- Form Login -->
       <form id="form-login" class="auth-form">
         <div class="form-group">
-          <label class="form-label" for="login-username">Nome Utente</label>
-          <input type="text" id="login-username" class="form-input" placeholder="Inserisci il tuo username" required autocomplete="username">
+          <label class="form-label" for="login-username">Nome Utente o Email</label>
+          <input type="text" id="login-username" class="form-input" placeholder="Es. marco_c o marco@example.com" required autocomplete="username">
         </div>
 
         <div class="form-group">
@@ -309,6 +309,11 @@
         <div class="form-group">
           <label class="form-label" for="register-username">Nome Utente *</label>
           <input type="text" id="register-username" class="form-input" placeholder="Es. marco_c (min. 3 caratteri)" required minlength="3" maxlength="30" autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="register-email">Indirizzo Email *</label>
+          <input type="email" id="register-email" class="form-input" placeholder="Es. marco.capuano@example.com" required autocomplete="email">
         </div>
 
         <div class="form-group">
@@ -477,7 +482,49 @@
         <div class="admin-users-section">
           <div class="section-title-row">
             <h4>👥 Utenti Registrati nel Sistema</h4>
-            <button id="btn-admin-refresh-users" class="btn btn-secondary btn-sm" title="Aggiorna elenco">🔄 Aggiorna</button>
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-admin-show-create-form" class="btn btn-primary btn-sm">➕ Nuovo Utente</button>
+              <button id="btn-admin-refresh-users" class="btn btn-secondary btn-sm" title="Aggiorna elenco">🔄 Aggiorna</button>
+            </div>
+          </div>
+
+          <!-- Modulo di Creazione Utente Amministratore -->
+          <div id="admin-create-user-card" class="admin-create-form-card" style="display: none;">
+            <div class="admin-create-form-header">
+              <h5>✨ Crea Nuova Utenza</h5>
+              <button type="button" id="btn-admin-close-create-form" class="task-btn" style="font-size: 0.9rem;" title="Chiudi form">✕</button>
+            </div>
+            <form id="admin-create-user-form">
+              <div class="admin-form-grid">
+                <div class="form-group">
+                  <label class="form-label" for="admin-new-username">Username *</label>
+                  <input type="text" id="admin-new-username" class="form-input" placeholder="mario_rossi" required minlength="3" maxlength="30" autocomplete="off">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="admin-new-email">Email *</label>
+                  <input type="email" id="admin-new-email" class="form-input" placeholder="mario.rossi@example.com" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="admin-new-name">Nome Visibile</label>
+                  <input type="text" id="admin-new-name" class="form-input" placeholder="Mario Rossi" maxlength="50" autocomplete="off">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="admin-new-password">Password *</label>
+                  <input type="password" id="admin-new-password" class="form-input" placeholder="Min. 6 caratteri" required minlength="6" maxlength="100" autocomplete="new-password">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                  <label class="form-label" for="admin-new-role">Ruolo Utente</label>
+                  <select id="admin-new-role" class="form-select">
+                    <option value="utente" selected>👤 Utente standard</option>
+                    <option value="admin">👑 Amministratore (Admin)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="admin-create-form-actions">
+                <button type="button" id="btn-admin-cancel-create" class="btn btn-secondary btn-sm">Annulla</button>
+                <button type="submit" id="btn-admin-submit-create" class="btn btn-primary btn-sm">Salva Utenza</button>
+              </div>
+            </form>
           </div>
           
           <div class="table-container">
@@ -485,14 +532,15 @@
               <thead>
                 <tr>
                   <th>Utente</th>
-                  <th>Nome Visualizzato</th>
+                  <th>Email</th>
                   <th>Ruolo</th>
+                  <th>Stato</th>
                   <th>Task</th>
                   <th>Azioni</th>
                 </tr>
               </thead>
               <tbody id="admin-users-tbody">
-                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Caricamento utenti...</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Caricamento utenti...</td></tr>
               </tbody>
             </table>
           </div>
@@ -511,6 +559,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Entry Script (ES6 Modules) -->
-  <script type="module" src="/js/app.js?v=2.8"></script>
+  <script type="module" src="/js/app.js?v=2.9"></script>
 </body>
 </html>

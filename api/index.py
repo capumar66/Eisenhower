@@ -63,19 +63,26 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                email TEXT UNIQUE COLLATE NOCASE,
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 display_name TEXT,
                 role TEXT NOT NULL DEFAULT 'utente',
+                is_blocked INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
         """)
-        # Migrazione automatica se la colonna role non esiste ancora
+        # Migrazione automatica se colonne mancanti
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(users);")
         columns = [row[1] for row in cursor.fetchall()]
         if "role" not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'utente';")
+        if "email" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT;")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;")
+        if "is_blocked" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0;")
         # Assicura che l'utente 'admin' abbia ruolo 'admin' se presente
         cursor.execute("UPDATE users SET role = 'admin' WHERE LOWER(username) = 'admin';")
         conn.execute("""
@@ -150,8 +157,16 @@ class PriorityType(str, Enum):
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=30)
+    email: Optional[str] = Field(default=None, max_length=100)
     password: str = Field(..., min_length=6, max_length=100)
     display_name: Optional[str] = Field(default="", max_length=50)
+
+class AdminUserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=30)
+    email: str = Field(..., min_length=5, max_length=100)
+    password: str = Field(..., min_length=6, max_length=100)
+    display_name: Optional[str] = Field(default="", max_length=50)
+    role: str = Field(default="utente")
 
 class UserLogin(BaseModel):
     username: str
@@ -160,15 +175,19 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: str
     username: str
+    email: Optional[str] = None
     display_name: Optional[str] = None
     role: str = "utente"
+    is_blocked: bool = False
     created_at: str
 
 class AdminUserItem(BaseModel):
     id: str
     username: str
+    email: Optional[str] = None
     display_name: Optional[str] = None
     role: str = "utente"
+    is_blocked: bool = False
     created_at: str
     task_count: int = 0
 
@@ -303,7 +322,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT u.id, u.username, u.display_name, u.role, u.created_at
+            SELECT u.id, u.username, u.email, u.display_name, u.role, u.is_blocked, u.created_at
             FROM sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.token = ?
@@ -316,11 +335,19 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Sessione non valida o scaduta. Effettua nuovamente il login."
             )
+        if row["is_blocked"]:
+            cursor.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Il tuo account è stato bloccato dall'amministratore."
+            )
         return UserResponse(
             id=row["id"],
             username=row["username"],
+            email=row["email"],
             display_name=row["display_name"],
             role=row["role"] or "utente",
+            is_blocked=bool(row["is_blocked"]),
             created_at=row["created_at"]
         )
 
@@ -356,10 +383,18 @@ def row_to_task(row: sqlite3.Row) -> Task:
 def register(payload: UserRegister):
     """Registra un nuovo utente e restituisce il token di sessione."""
     clean_username = payload.username.strip()
+    clean_email = payload.email.strip().lower() if payload.email else f"{clean_username.lower()}@eisenhower.app"
+
     if not re.match(r"^[a-zA-Z0-9_.-]+$", clean_username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Lo username può contenere solo lettere, numeri, punti, trattini o underscore."
+        )
+
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indirizzo email non valido."
         )
 
     user_id = str(uuid.uuid4())
@@ -369,11 +404,18 @@ def register(payload: UserRegister):
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE username = ?", (clean_username,))
+        cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (clean_username.lower(),))
         if cursor.fetchone():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Nome utente già utilizzato. Scegline un altro."
+            )
+
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indirizzo email già registrato. Utilizzane un altro."
             )
 
         cursor.execute("SELECT COUNT(*) FROM users;")
@@ -382,10 +424,10 @@ def register(payload: UserRegister):
 
         cursor.execute(
             """
-            INSERT INTO users (id, username, password_hash, salt, display_name, role, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, email, password_hash, salt, display_name, role, is_blocked, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
             """,
-            (user_id, clean_username, pwd_hash, salt, display_name, assigned_role, now_iso)
+            (user_id, clean_username, clean_email, pwd_hash, salt, display_name, assigned_role, now_iso)
         )
 
         token = secrets.token_urlsafe(32)
@@ -397,27 +439,39 @@ def register(payload: UserRegister):
     user_res = UserResponse(
         id=user_id,
         username=clean_username,
+        email=clean_email,
         display_name=display_name,
         role=assigned_role,
+        is_blocked=False,
         created_at=now_iso
     )
     return AuthResponse(token=token, user=user_res)
 
 @api_router.post("/auth/login", response_model=AuthResponse)
 def login(payload: UserLogin):
-    """Autentica un utente esistente e genera un nuovo token di sessione."""
-    clean_username = payload.username.strip()
+    """Autentica un utente esistente (tramite username o email) e genera un nuovo token di sessione."""
+    clean_login = payload.username.strip().lower()
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, password_hash, salt, display_name, role, created_at FROM users WHERE username = ?",
-            (clean_username,)
+            """
+            SELECT id, username, email, password_hash, salt, display_name, role, is_blocked, created_at
+            FROM users
+            WHERE LOWER(username) = ? OR LOWER(email) = ?
+            """,
+            (clean_login, clean_login)
         )
         row = cursor.fetchone()
         if not row or not verify_password(payload.password, row["salt"], row["password_hash"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Nome utente o password non corretti."
+                detail="Nome utente/email o password non corretti."
+            )
+
+        if row["is_blocked"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Questo account è stato bloccato dall'amministratore."
             )
 
         user_id = row["id"]
@@ -431,8 +485,10 @@ def login(payload: UserLogin):
     user_res = UserResponse(
         id=user_id,
         username=row["username"],
+        email=row["email"],
         display_name=row["display_name"],
         role=row["role"] or "utente",
+        is_blocked=bool(row["is_blocked"]),
         created_at=row["created_at"]
     )
     return AuthResponse(token=token, user=user_res)
@@ -496,7 +552,7 @@ def get_all_users(current_user: UserResponse = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT u.id, u.username, u.display_name, u.role, u.created_at,
+            SELECT u.id, u.username, u.email, u.display_name, u.role, u.is_blocked, u.created_at,
                    COUNT(t.id) as task_count
             FROM users u
             LEFT JOIN tasks t ON u.id = t.user_id
@@ -507,13 +563,127 @@ def get_all_users(current_user: UserResponse = Depends(get_current_user)):
             AdminUserItem(
                 id=r["id"],
                 username=r["username"],
+                email=r["email"],
                 display_name=r["display_name"],
                 role=r["role"] or "utente",
+                is_blocked=bool(r["is_blocked"]),
                 created_at=r["created_at"],
                 task_count=r["task_count"]
             )
             for r in cursor.fetchall()
         ]
+
+@api_router.post("/admin/users", response_model=AdminUserItem, status_code=status.HTTP_201_CREATED)
+def create_user_by_admin(payload: AdminUserCreate, current_user: UserResponse = Depends(get_current_user)):
+    """Crea un nuovo utente tramite maschera Admin."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accesso negato: operazione riservata agli amministratori."
+        )
+
+    clean_username = payload.username.strip()
+    clean_email = payload.email.strip().lower()
+    display_name = payload.display_name.strip() if payload.display_name else clean_username
+    role = "admin" if payload.role == "admin" else "utente"
+
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", clean_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lo username può contenere solo lettere, numeri, punti, trattini o underscore."
+        )
+
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indirizzo email non valido."
+        )
+
+    user_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    pwd_hash, salt = hash_password(payload.password)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (clean_username.lower(),))
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nome utente già utilizzato. Scegline un altro."
+            )
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indirizzo email già utilizzato. Scegline un altro."
+            )
+
+        cursor.execute(
+            """
+            INSERT INTO users (id, username, email, password_hash, salt, display_name, role, is_blocked, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+            """,
+            (user_id, clean_username, clean_email, pwd_hash, salt, display_name, role, now_iso)
+        )
+
+    return AdminUserItem(
+        id=user_id,
+        username=clean_username,
+        email=clean_email,
+        display_name=display_name,
+        role=role,
+        is_blocked=False,
+        created_at=now_iso,
+        task_count=0
+    )
+
+@api_router.post("/admin/users/{user_id}/toggle-block", response_model=AdminUserItem)
+def toggle_block_user(user_id: str, current_user: UserResponse = Depends(get_current_user)):
+    """Blocca o sblocca un utente. Se bloccato, invalida immediatamente tutte le sue sessioni attive."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accesso negato: operazione riservata agli amministratori."
+        )
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Non puoi bloccare il tuo account amministratore."
+        )
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_blocked FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Utente non trovato.")
+
+        new_blocked_state = 0 if row["is_blocked"] else 1
+        cursor.execute("UPDATE users SET is_blocked = ? WHERE id = ?", (new_blocked_state, user_id))
+
+        # Se l'utente viene bloccato, cancella subito tutte le sue sessioni attive per forzare la disconnessione immediata
+        if new_blocked_state == 1:
+            cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+        cursor.execute("""
+            SELECT u.id, u.username, u.email, u.display_name, u.role, u.is_blocked, u.created_at,
+                   COUNT(t.id) as task_count
+            FROM users u
+            LEFT JOIN tasks t ON u.id = t.user_id
+            WHERE u.id = ?
+            GROUP BY u.id;
+        """, (user_id,))
+        r = cursor.fetchone()
+        return AdminUserItem(
+            id=r["id"],
+            username=r["username"],
+            email=r["email"],
+            display_name=r["display_name"],
+            role=r["role"] or "utente",
+            is_blocked=bool(r["is_blocked"]),
+            created_at=r["created_at"],
+            task_count=r["task_count"]
+        )
 
 @api_router.delete("/admin/users/{user_id}")
 def delete_user_by_admin(user_id: str, current_user: UserResponse = Depends(get_current_user)):
