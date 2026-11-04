@@ -542,10 +542,14 @@ class EisenhowerApp {
           this.currentUser.email = updated.email || email;
           this.updateUserUI(this.currentUser);
         }
-        this.showToast('Dati utente aggiornati con successo!');
+        if (updated.notice) {
+          this.showToast(updated.notice);
+        } else {
+          this.showToast('Dati utente aggiornati con successo!');
+        }
         this.closeEditUserModal();
         if (this.adminModal?.classList.contains('is-open')) {
-          this.loadAdminData();
+          await this.loadAdminData();
         }
       } catch (err) {
         alert('Errore aggiornamento utente: ' + err.message);

@@ -890,21 +890,51 @@ export const TaskStorage = {
     const cleanEmail = email ? email.trim().toLowerCase() : undefined;
     const cleanName = display_name !== undefined ? display_name.trim() : undefined;
 
-    if (sb && isCurrent) {
+    // Recupera l'utente dallo store per preservarne sempre lo username
+    const existingUser = this.getStoredUsersList().find(u => u.id === userId || u.username === userId) || {};
+    const targetUsername = existingUser.username || (isCurrent ? curr.username : userId);
+    let supabaseNotice = null;
+
+    if (sb) {
+      // 1. Aggiorna la tabella users su Supabase se disponibile
       try {
-        const updateData = {};
-        if (cleanName !== undefined) {
-          updateData.data = { ...(curr.user_metadata || {}), display_name: cleanName };
+        await sb.from('users').upsert({
+          id: userId,
+          username: targetUsername,
+          email: cleanEmail,
+          display_name: cleanName || targetUsername,
+          role: role || existingUser.role || 'utente'
+        });
+      } catch (tErr) {
+        console.warn('Errore update tabella users Supabase:', tErr);
+      }
+
+      // 2. Se è l'utente corrente, aggiorna la sessione auth di Supabase (email + metadati)
+      if (isCurrent) {
+        try {
+          const updateData = {
+            data: {
+              ...(curr.user_metadata || {}),
+              display_name: cleanName,
+              email: cleanEmail,
+              username: targetUsername
+            }
+          };
+          if (cleanEmail) updateData.email = cleanEmail;
+          if (password) updateData.password = password;
+          const { data: updateRes, error } = await sb.auth.updateUser(updateData);
+          if (error) {
+            console.warn('Errore sb.auth.updateUser:', error);
+          } else if (updateRes?.user?.new_email && updateRes.user.new_email !== updateRes.user.email) {
+            supabaseNotice = `Supabase richiede conferma: controlla la casella di posta ${updateRes.user.new_email} per confermare il cambio email.`;
+          }
+        } catch (err) {
+          console.warn('Errore sync updateUser Supabase:', err);
         }
-        if (cleanEmail) updateData.email = cleanEmail;
-        if (password) updateData.password = password;
-        const { error } = await sb.auth.updateUser(updateData);
-        if (error) throw new Error(error.message || 'Errore aggiornamento utente Supabase');
-      } catch (err) {
-        console.warn('Errore sync updateUser Supabase:', err);
       }
     }
 
+    // 3. Sincronizza con il backend API
     let updatedObj = null;
     try {
       const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
@@ -924,12 +954,19 @@ export const TaskStorage = {
       console.warn('Errore API update user:', e);
     }
 
-    const finalUser = updatedObj || {
+    const finalUser = {
       id: userId,
-      display_name: cleanName,
-      email: cleanEmail,
-      role
+      username: targetUsername,
+      display_name: cleanName || targetUsername,
+      email: cleanEmail || existingUser.email,
+      role: role || existingUser.role || 'utente',
+      is_blocked: existingUser.is_blocked || false,
+      created_at: existingUser.created_at || new Date().toISOString()
     };
+
+    if (updatedObj) {
+      Object.assign(finalUser, updatedObj);
+    }
 
     if (isCurrent) {
       if (cleanName) curr.display_name = cleanName;
@@ -938,8 +975,13 @@ export const TaskStorage = {
       this.setUser(curr);
     }
 
+    // Salva sempre nello store degli utenti e aggiorna il mapping username -> email
     this.recordUserInList(finalUser);
-    return finalUser;
+    if (cleanEmail) {
+      this.recordUserEmailMapping(targetUsername, cleanEmail);
+    }
+
+    return { ...finalUser, notice: supabaseNotice };
   },
 
   async toggleBlockUser(userId) {

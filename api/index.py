@@ -7,6 +7,7 @@ import re
 import secrets
 import sqlite3
 import time
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -867,6 +868,40 @@ def update_user_by_admin(user_id: str, payload: UserUpdate, current_user: UserRe
             cursor.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
 
         conn.commit()
+
+        # Sincronizza direttamente su Supabase Auth Admin se la Service Role Key è configurata
+        supabase_url = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").strip()
+        service_role_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY") or "").strip()
+        if supabase_url and service_role_key:
+            try:
+                admin_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}"
+                admin_body = {
+                    "email": new_email,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "username": target["username"],
+                        "display_name": new_dn,
+                        "role": new_role,
+                        "email": new_email
+                    }
+                }
+                if payload.password and len(payload.password) >= 6:
+                    admin_body["password"] = payload.password
+                req_data = json.dumps(admin_body).encode("utf-8")
+                req = urllib.request.Request(
+                    admin_endpoint,
+                    data=req_data,
+                    headers={
+                        "apikey": service_role_key,
+                        "Authorization": f"Bearer {service_role_key}",
+                        "Content-Type": "application/json"
+                    },
+                    method="PUT"
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    pass
+            except Exception as e:
+                logging.getLogger("uvicorn.error").warning(f"Errore sync utente su Supabase Admin API: {e}")
 
         cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_id = ?", (target["id"],))
         t_count = cursor.fetchone()[0]
