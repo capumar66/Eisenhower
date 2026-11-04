@@ -144,74 +144,122 @@ export const TaskStorage = {
   },
 
   async login(username, password) {
+    const cleanUsername = username.trim();
     const sb = getSupabase();
+
     if (sb) {
-      const cleanUsername = username.trim();
-      let email = cleanUsername;
-
-      if (!cleanUsername.includes('@')) {
-        // Cerca l'email reale mappata per questo username
+      // Costruisci l'elenco dei candidati email da provare su Supabase Auth
+      const candidates = [];
+      if (cleanUsername.includes('@')) {
+        candidates.push(cleanUsername);
+        // Se è stata inserita un'email, cerca lo username associato per aggiungere l'email sintetica
+        const storedByEmail = this.getStoredUsersList().find(
+          u => u.email && u.email.toLowerCase() === cleanUsername.toLowerCase()
+        );
+        if (storedByEmail?.username) {
+          const syn = `${storedByEmail.username.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
+          if (!candidates.includes(syn)) candidates.push(syn);
+        }
+      } else {
+        // È stato inserito uno username:
+        // 1. Prova l'email mappata localmente
         const mappedEmail = this.getUserEmailMapping(cleanUsername);
-        if (mappedEmail) {
-          email = mappedEmail;
-        } else {
-          // Interroga l'endpoint helper per recuperare l'email reale dallo username
-          try {
-            const res = await fetch(`${API_BASE}/auth/resolve-email?username=${encodeURIComponent(cleanUsername)}`);
-            if (res.ok) {
-              const resData = await res.json();
-              if (resData.email) email = resData.email;
+        if (mappedEmail && !candidates.includes(mappedEmail)) {
+          candidates.push(mappedEmail);
+        }
+
+        // 2. Prova l'email registrata nello store utenti
+        const stored = this.getStoredUsersList().find(
+          u => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase()
+        );
+        if (stored?.email && !candidates.includes(stored.email)) {
+          candidates.push(stored.email);
+        }
+
+        // 3. Prova a risolvere l'email tramite backend API
+        try {
+          const res = await fetch(`${API_BASE}/auth/resolve-email?username=${encodeURIComponent(cleanUsername)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.email && !candidates.includes(data.email)) {
+              candidates.push(data.email);
             }
-          } catch {}
-          if (!email.includes('@')) {
-            email = `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
           }
+        } catch {}
+
+        // 4. Prova l'email sintetica originaria per questo username su Supabase
+        const synthetic = `${cleanUsername.toLowerCase().replace(/[^a-z0-9_.-]/g, '')}@eisenhower.app`;
+        if (!candidates.includes(synthetic)) {
+          candidates.push(synthetic);
         }
       }
 
-      const { data, error } = await sb.auth.signInWithPassword({
-        email,
-        password
-      });
+      let lastError = null;
+      let authData = null;
+      let matchedEmail = null;
 
-      if (error) {
-        if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
-          throw new Error('Email non confermata su Supabase. Disattiva "Confirm email" nella dashboard di Supabase (Authentication > Providers > Email) oppure conferma l\'utente da Authentication > Users.');
+      for (const candEmail of candidates) {
+        try {
+          const { data, error } = await sb.auth.signInWithPassword({
+            email: candEmail,
+            password
+          });
+          if (!error && data?.user) {
+            authData = data;
+            matchedEmail = candEmail;
+            break;
+          }
+          if (error) {
+            lastError = error;
+            // Se una candidata è unconfirmed, continuiamo a testare le altre
+            if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
+              continue;
+            }
+          }
+        } catch (e) {
+          lastError = e;
         }
-        throw new Error(error.message || 'Credenziali non valide su Supabase.');
       }
 
-      const isAdminUser = ['admin', 'marco'].includes(cleanUsername.toLowerCase());
-      const role = data.user.user_metadata?.role || (isAdminUser ? 'admin' : 'utente');
-      const userObj = {
-        id: data.user.id,
-        username: data.user.user_metadata?.username || cleanUsername,
-        email: data.user.email || email,
-        display_name: data.user.user_metadata?.display_name || cleanUsername,
-        role: role
-      };
+      if (authData && authData.user) {
+        const isAdminUser = ['admin', 'marco'].includes(cleanUsername.toLowerCase());
+        const role = authData.user.user_metadata?.role || (isAdminUser ? 'admin' : 'utente');
+        const userObj = {
+          id: authData.user.id,
+          username: authData.user.user_metadata?.username || cleanUsername,
+          email: authData.user.email || matchedEmail,
+          display_name: authData.user.user_metadata?.display_name || cleanUsername,
+          role: role
+        };
 
-      this.setToken(data.session?.access_token || 'sb_active_session');
-      this.setUser(userObj);
-      this.recordUserInList(userObj);
-      localStorage.removeItem(STORAGE_KEY);
-      return userObj;
+        this.setToken(authData.session?.access_token || 'sb_active_session');
+        this.setUser(userObj);
+        this.recordUserInList(userObj);
+        if (matchedEmail) {
+          this.recordUserEmailMapping(cleanUsername, matchedEmail);
+        }
+        localStorage.removeItem(STORAGE_KEY);
+        return userObj;
+      }
+
+      console.warn('Login con Supabase non riuscito per i candidati:', candidates, lastError);
     }
 
     // Fallback: API FastAPI Locale
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username: cleanUsername, password })
     });
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || 'Impossibile effettuare il login');
+      throw new Error(data.detail || 'Impossibile effettuare il login. Verifica username e password.');
     }
 
     this.setToken(data.token);
     this.setUser(data.user);
+    this.recordUserInList(data.user);
     localStorage.removeItem(STORAGE_KEY);
     return data.user;
   },
