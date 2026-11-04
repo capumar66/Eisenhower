@@ -87,6 +87,7 @@ class EisenhowerApp {
     this.adminDbBadge = document.querySelector('#admin-db-badge');
     this.adminVercelEnvStatus = document.querySelector('#admin-vercel-env-status');
     this.adminDbEngine = document.querySelector('#admin-db-engine');
+    this.adminServiceRoleStatus = document.querySelector('#admin-service-role-status');
     this.adminUsersTbody = document.querySelector('#admin-users-tbody');
     this.btnAdminRefreshUsers = document.querySelector('#btn-admin-refresh-users');
     this.btnAdminShowCreateForm = document.querySelector('#btn-admin-show-create-form');
@@ -290,6 +291,13 @@ class EisenhowerApp {
         this.adminVercelEnvStatus.innerHTML = `<span style="color: #34d399; font-weight: 600;">✅ ${cfgStatus.source} (${cfgStatus.urlPreview})</span>`;
       } else {
         this.adminVercelEnvStatus.innerHTML = `<span style="color: #f87171; font-weight: 600;">❌ Non rilevate (Verifica Vercel Settings e fai Redeploy)</span>`;
+      }
+    }
+    if (this.adminServiceRoleStatus) {
+      if (cfgStatus.hasServiceRole) {
+        this.adminServiceRoleStatus.innerHTML = '<span style="color: #34d399; font-weight: 600;">✅ Configurato (Modifiche email istantanee)</span>';
+      } else {
+        this.adminServiceRoleStatus.innerHTML = '<span style="color: #fbbf24; font-weight: 500;">⚠️ Non configurato (Richiede conferma via link)</span>';
       }
     }
 
@@ -543,7 +551,7 @@ class EisenhowerApp {
           this.updateUserUI(this.currentUser);
         }
         if (updated.notice) {
-          this.showToast(updated.notice);
+          this.showToast(updated.notice, 6000);
         } else {
           this.showToast('Dati utente aggiornati con successo!');
         }
@@ -1255,7 +1263,7 @@ class EisenhowerApp {
   // -------------------------------------------------------------------------
   // Toast Notifications
   // -------------------------------------------------------------------------
-  showToast(message) {
+  showToast(message, duration = 2800) {
     if (!this.toastContainer) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
@@ -1267,7 +1275,7 @@ class EisenhowerApp {
       toast.style.transform = 'translateY(10px)';
       toast.style.transition = 'all 0.25s ease';
       setTimeout(() => toast.remove(), 250);
-    }, 2800);
+    }, duration);
   }
 }
 

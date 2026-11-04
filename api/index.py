@@ -583,6 +583,76 @@ def resolve_email(username: str):
             return {"email": row["email"]}
     return {"email": None}
 
+def sync_supabase_admin_user(target_id: str, target_username: str, target_email: Optional[str], new_email: Optional[str], new_display_name: Optional[str], new_role: Optional[str], new_password: Optional[str] = None) -> bool:
+    """
+    Sincronizza l'utente su Supabase Auth Admin API se SUPABASE_SERVICE_ROLE_KEY è configurata.
+    Aggiorna direttamente auth.users bypassando la richiesta di conferma email via link.
+    """
+    supabase_url = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").strip()
+    service_role_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY") or "").strip()
+    if not (supabase_url and service_role_key):
+        return False
+
+    try:
+        sb_uuid = None
+        list_url = f"{supabase_url.rstrip('/')}/auth/v1/admin/users?per_page=100"
+        req_list = urllib.request.Request(
+            list_url,
+            headers={
+                "apikey": service_role_key,
+                "Authorization": f"Bearer {service_role_key}"
+            },
+            method="GET"
+        )
+        with urllib.request.urlopen(req_list, timeout=5) as list_resp:
+            data = json.loads(list_resp.read().decode("utf-8"))
+            users = data.get("users", []) if isinstance(data, dict) else data
+            for u in users:
+                meta = u.get("user_metadata", {})
+                if u.get("id") == target_id or (target_email and u.get("email", "").lower() == target_email.lower()) or (meta.get("username", "").lower() == (target_username or "").lower()):
+                    sb_uuid = u["id"]
+                    break
+
+        admin_body = {
+            "user_metadata": {
+                "username": target_username,
+                "display_name": new_display_name or target_username,
+                "role": new_role or "utente"
+            }
+        }
+        if new_email:
+            admin_body["email"] = new_email
+            admin_body["email_confirm"] = True
+            admin_body["user_metadata"]["email"] = new_email
+        if new_password and len(new_password) >= 6:
+            admin_body["password"] = new_password
+
+        if sb_uuid:
+            admin_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/admin/users/{sb_uuid}"
+            req_method = "PUT"
+        else:
+            admin_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/admin/users"
+            req_method = "POST"
+            if "password" not in admin_body:
+                admin_body["password"] = "EisenhowerPass123!"
+
+        req_data = json.dumps(admin_body).encode("utf-8")
+        req = urllib.request.Request(
+            admin_endpoint,
+            data=req_data,
+            headers={
+                "apikey": service_role_key,
+                "Authorization": f"Bearer {service_role_key}",
+                "Content-Type": "application/json"
+            },
+            method=req_method
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return True
+    except Exception as e:
+        logging.getLogger("uvicorn.error").warning(f"Errore sync Supabase Admin API: {e}")
+        return False
+
 @api_router.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: UserResponse = Depends(get_current_user)):
     """Restituisce il profilo dell'utente correntemente autenticato."""
@@ -616,6 +686,18 @@ def update_my_profile(payload: UserUpdate, current_user: UserResponse = Depends(
             cursor.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (pwd_hash, salt, current_user.id))
 
         conn.commit()
+
+        # Sincronizza direttamente su Supabase Auth Admin se la Service Role Key è configurata
+        sync_supabase_admin_user(
+            current_user.id,
+            current_user.username,
+            current_user.email,
+            new_email,
+            new_name,
+            current_user.role,
+            payload.password
+        )
+
         return UserResponse(
             id=current_user.id,
             username=current_user.username,
@@ -659,10 +741,16 @@ def get_public_config():
         or os.environ.get("VITE_SUPABASE_ANON_KEY")
         or ""
     ).strip()
+    service_role_key = (
+        os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or os.environ.get("SUPABASE_SERVICE_KEY")
+        or ""
+    ).strip()
     return {
         "supabase_url": supabase_url,
         "supabase_anon_key": supabase_anon_key,
-        "configured": bool(supabase_url and supabase_anon_key)
+        "configured": bool(supabase_url and supabase_anon_key),
+        "service_role_configured": bool(service_role_key)
     }
 
 # ---------------------------------------------------------------------------
@@ -764,6 +852,18 @@ def create_user_by_admin(payload: AdminUserCreate, current_user: UserResponse = 
             """,
             (user_id, clean_username, clean_email, pwd_hash, salt, display_name, role, now_iso)
         )
+        conn.commit()
+
+    # Sincronizza direttamente su Supabase Auth Admin se la Service Role Key è configurata
+    sync_supabase_admin_user(
+        user_id,
+        clean_username,
+        None,
+        clean_email,
+        display_name,
+        role,
+        payload.password
+    )
 
     return AdminUserItem(
         id=user_id,
@@ -870,38 +970,15 @@ def update_user_by_admin(user_id: str, payload: UserUpdate, current_user: UserRe
         conn.commit()
 
         # Sincronizza direttamente su Supabase Auth Admin se la Service Role Key è configurata
-        supabase_url = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").strip()
-        service_role_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY") or "").strip()
-        if supabase_url and service_role_key:
-            try:
-                admin_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}"
-                admin_body = {
-                    "email": new_email,
-                    "email_confirm": True,
-                    "user_metadata": {
-                        "username": target["username"],
-                        "display_name": new_dn,
-                        "role": new_role,
-                        "email": new_email
-                    }
-                }
-                if payload.password and len(payload.password) >= 6:
-                    admin_body["password"] = payload.password
-                req_data = json.dumps(admin_body).encode("utf-8")
-                req = urllib.request.Request(
-                    admin_endpoint,
-                    data=req_data,
-                    headers={
-                        "apikey": service_role_key,
-                        "Authorization": f"Bearer {service_role_key}",
-                        "Content-Type": "application/json"
-                    },
-                    method="PUT"
-                )
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    pass
-            except Exception as e:
-                logging.getLogger("uvicorn.error").warning(f"Errore sync utente su Supabase Admin API: {e}")
+        sync_supabase_admin_user(
+            user_id,
+            target["username"],
+            target["email"],
+            new_email,
+            new_dn,
+            new_role,
+            payload.password
+        )
 
         cursor.execute("SELECT COUNT(*) FROM tasks WHERE user_id = ?", (target["id"],))
         t_count = cursor.fetchone()[0]

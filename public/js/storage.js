@@ -14,6 +14,7 @@ let supabaseClient = null;
 let serverConfigLoaded = false;
 let envSupabaseUrl = null;
 let envSupabaseKey = null;
+let envServiceRoleConfigured = false;
 
 async function waitForSupabaseSdk(timeoutMs = 3000) {
   const start = Date.now();
@@ -55,6 +56,9 @@ export const TaskStorage = {
             envSupabaseUrl = cfg.supabase_url.trim();
             envSupabaseKey = cfg.supabase_anon_key.trim();
           }
+          if (cfg && cfg.service_role_configured) {
+            envServiceRoleConfigured = true;
+          }
         }
       } catch (e) {
         console.warn('Impossibile recuperare config dal server:', e);
@@ -72,6 +76,7 @@ export const TaskStorage = {
       hasUrl: Boolean(url),
       hasKey: Boolean(key),
       isConfigured: Boolean(url && key),
+      hasServiceRole: Boolean(envServiceRoleConfigured),
       source: envSupabaseUrl ? 'Variabili d\'Ambiente Vercel' : (localStorage.getItem(SUPABASE_URL_KEY) ? 'Manuale Admin (LocalStorage)' : 'Nessuna'),
       urlPreview: url ? (url.length > 35 ? url.substring(0, 32) + '...' : url) : 'Non impostato'
     };
@@ -982,10 +987,11 @@ export const TaskStorage = {
       }
     }
 
-    // 3. Sincronizza con il backend API
+    // 3. Sincronizza con il backend API (che sincronizza istantaneamente auth.users se configurata SUPABASE_SERVICE_ROLE_KEY)
     let updatedObj = null;
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
+      const endpoint = isCurrent ? `${API_BASE}/auth/me` : `${API_BASE}/admin/users/${userId}`;
+      const res = await fetch(endpoint, {
         method: 'PUT',
         headers: this.getAuthHeaders(),
         body: JSON.stringify({
@@ -1000,6 +1006,12 @@ export const TaskStorage = {
       }
     } catch (e) {
       console.warn('Errore API update user:', e);
+    }
+
+    if (envServiceRoleConfigured) {
+      supabaseNotice = null;
+    } else if (!supabaseNotice && cleanEmail && cleanEmail !== (existingUser.email || '').toLowerCase()) {
+      supabaseNotice = `Email salvata! Nota Supabase: per attivare la nuova email in Supabase senza link di conferma, aggiungi SUPABASE_SERVICE_ROLE_KEY su Vercel oppure disattiva "Secure email change" nella dashboard Supabase.`;
     }
 
     const finalUser = {

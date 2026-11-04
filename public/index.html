@@ -472,9 +472,14 @@
               <span class="info-label">Motore Database:</span>
               <span id="admin-db-engine" class="info-val">...</span>
             </div>
+            <div class="admin-info-item">
+              <span class="info-label">Service Role Key:</span>
+              <span id="admin-service-role-status" class="info-val">...</span>
+            </div>
           </div>
           <div class="admin-help-box">
-            <p><strong>Configurazione Variabili su Vercel:</strong> In Vercel vai in <em>Project Settings → Environment Variables</em> e aggiungi <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code>. L'applicazione le caricherà automaticamente senza mostrare chiavi agli utenti.</p>
+            <p><strong>Configurazione Variabili su Vercel:</strong> In Vercel vai in <em>Project Settings → Environment Variables</em> e aggiungi <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code>.</p>
+            <p style="margin-top: 6px;"><strong>Aggiornamento Email su Supabase:</strong> Di default Supabase richiede la conferma cliccando sul link inviato alla nuova email (<em>"Secure email change"</em>). Per aggiornare l'indirizzo istantaneamente senza conferma via link, aggiungi la variabile <code>SUPABASE_SERVICE_ROLE_KEY</code> (da <em>Supabase → Project Settings → API → service_role secret</em>) su Vercel, oppure disattiva <em>"Secure email change"</em> nella dashboard di Supabase (<em>Authentication → Providers → Email</em>).</p>
           </div>
         </div>
 

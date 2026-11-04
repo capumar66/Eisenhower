@@ -17,10 +17,17 @@ class handler(BaseHTTPRequestHandler):
             or ""
         ).strip()
 
+        service_role_key = (
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_KEY")
+            or ""
+        ).strip()
+
         response_data = {
             "supabase_url": supabase_url,
             "supabase_anon_key": supabase_anon_key,
-            "configured": bool(supabase_url and supabase_anon_key)
+            "configured": bool(supabase_url and supabase_anon_key),
+            "service_role_configured": bool(service_role_key)
         }
 
         self.send_response(200)
